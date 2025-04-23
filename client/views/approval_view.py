@@ -201,13 +201,19 @@ class ApprovalView(QWidget):
         
         if reply == QMessageBox.StandardButton.Yes:
             try:
+                print(f"发送审批通过请求，审批ID: {approval_id}")
+                
                 response = requests.post(
                     f"http://localhost:8000/approvals/{approval_id}/approve",
                     headers={"Authorization": f"Bearer {self.token}"}
                 )
                 
+                print(f"响应状态码: {response.status_code}")
+                print(f"响应内容: {response.text}")
+                
                 if response.status_code == 200:
                     result = response.json()
+                    print(f"审批通过成功，返回结果: {result}")
                     QMessageBox.information(self, "操作成功", "审批已通过")
                     
                     # 如果所有审批都已完成，显示创建财务记录的询问
@@ -216,8 +222,19 @@ class ApprovalView(QWidget):
                     
                     self.refresh_data()
                 else:
-                    QMessageBox.warning(self, "操作失败", f"审批通过失败: {response.text}")
+                    error_message = response.text
+                    try:
+                        error_data = response.json()
+                        if "detail" in error_data:
+                            error_message = error_data["detail"]
+                    except:
+                        pass
+                    print(f"审批通过失败，错误信息: {error_message}")
+                    QMessageBox.warning(self, "操作失败", f"审批通过失败: {error_message}")
             except Exception as e:
+                print(f"审批通过过程中发生错误: {str(e)}")
+                import traceback
+                traceback.print_exc()
                 QMessageBox.warning(self, "错误", f"操作时发生错误: {str(e)}")
     
     def reject(self, approval_id):
@@ -231,17 +248,34 @@ class ApprovalView(QWidget):
         
         if reply == QMessageBox.StandardButton.Yes:
             try:
+                print(f"发送审批拒绝请求，审批ID: {approval_id}")
+                
                 response = requests.post(
                     f"http://localhost:8000/approvals/{approval_id}/reject",
                     headers={"Authorization": f"Bearer {self.token}"}
                 )
                 
+                print(f"响应状态码: {response.status_code}")
+                print(f"响应内容: {response.text}")
+                
                 if response.status_code == 200:
+                    print("审批拒绝成功")
                     QMessageBox.information(self, "操作成功", "审批已拒绝")
                     self.refresh_data()
                 else:
-                    QMessageBox.warning(self, "操作失败", f"审批拒绝失败: {response.text}")
+                    error_message = response.text
+                    try:
+                        error_data = response.json()
+                        if "detail" in error_data:
+                            error_message = error_data["detail"]
+                    except:
+                        pass
+                    print(f"审批拒绝失败，错误信息: {error_message}")
+                    QMessageBox.warning(self, "操作失败", f"审批拒绝失败: {error_message}")
             except Exception as e:
+                print(f"审批拒绝过程中发生错误: {str(e)}")
+                import traceback
+                traceback.print_exc()
                 QMessageBox.warning(self, "错误", f"操作时发生错误: {str(e)}")
     
     def on_selection_changed(self, selected, deselected):

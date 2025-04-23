@@ -405,7 +405,6 @@ class FinancialRecordDialog(QDialog):
             display_text = f"{event['id']} - {event['project_name']} (¥{event['amount']:,.2f})"
             self.event_combo.addItem(display_text, event["id"])
         
-        self.update_amount_from_event()
         self.event_combo.currentIndexChanged.connect(self.update_amount_from_event)
         
         # 预选业务事件
@@ -496,6 +495,9 @@ class FinancialRecordDialog(QDialog):
         button_layout.addWidget(cancel_button)
         
         layout.addLayout(button_layout)
+        
+        # 将update_amount_from_event调用移到这里，确保所有UI元素都已创建
+        self.update_amount_from_event()
     
     def update_account_info(self):
         """更新科目信息"""
@@ -522,6 +524,11 @@ class FinancialRecordDialog(QDialog):
     
     def update_amount_from_event(self):
         """从业务事件更新金额"""
+        # 检查必要的属性是否已创建
+        if not hasattr(self, 'amount_input') or not hasattr(self, 'project_name_label') or not hasattr(self, 'description_input'):
+            # 如果属性尚未创建，则直接返回
+            return
+            
         selected_id = self.event_combo.currentData()
         
         if not selected_id:
@@ -579,36 +586,39 @@ class FinancialRecordDialog(QDialog):
     
     def save_data(self):
         """保存数据"""
-        # 验证输入
-        account_code = self.account_code_input.text()
-        if not account_code:
-            QMessageBox.warning(self, "输入错误", "请选择会计科目")
-            return
-        
-        business_event_id = self.event_combo.currentData()
-        if not business_event_id:
-            QMessageBox.warning(self, "输入错误", "请选择关联业务事件")
-            return
-        
-        amount = self.amount_input.value()
-        if amount <= 0:
-            QMessageBox.warning(self, "输入错误", "请输入有效金额")
-            return
-        
-        # 构建数据
-        data = {
-            "business_event_id": business_event_id,
-            "account_code": account_code,
-            "account_name": self.account_name_input.text(),
-            "amount": amount,
-            "direction": self.direction_combo.currentData(),
-            "record_date": self.date_input.date().toString("yyyy-MM-dd"),
-            "fiscal_year": self.fiscal_year_input.value(),
-            "fiscal_period": self.fiscal_period_input.value(),
-            "description": self.description_input.toPlainText(),
-        }
-        
         try:
+            # 验证输入
+            account_code = self.account_code_input.text()
+            if not account_code:
+                QMessageBox.warning(self, "输入错误", "请选择会计科目")
+                return
+            
+            business_event_id = self.event_combo.currentData()
+            if not business_event_id:
+                QMessageBox.warning(self, "输入错误", "请选择关联业务事件")
+                return
+            
+            amount = self.amount_input.value()
+            if amount <= 0:
+                QMessageBox.warning(self, "输入错误", "请输入有效金额")
+                return
+            
+            # 构建数据
+            data = {
+                "business_event_id": business_event_id,
+                "account_code": account_code,
+                "account_name": self.account_name_input.text(),
+                "amount": amount,
+                "direction": self.direction_combo.currentData(),
+                "record_date": self.date_input.date().toString("yyyy-MM-dd"),
+                "fiscal_year": self.fiscal_year_input.value(),
+                "fiscal_period": self.fiscal_period_input.value(),
+                "description": self.description_input.toPlainText(),
+                "created_by": self.user_data["id"]
+            }
+            
+            print(f"准备发送的数据: {data}")  # 调试输出
+            
             # 发送请求
             response = requests.post(
                 "http://localhost:8000/financial_records",
@@ -616,25 +626,49 @@ class FinancialRecordDialog(QDialog):
                 headers={"Authorization": f"Bearer {self.token}"}
             )
             
+            print(f"响应状态码: {response.status_code}")  # 调试输出
+            print(f"响应内容: {response.text}")  # 调试输出
+            
             if response.status_code == 200:
                 result = response.json()
                 QMessageBox.information(self, "添加成功", f"财务记录已添加，ID: {result['id']}")
                 
                 # 更新业务事件状态为已入账
                 try:
-                    status_response = requests.post(
-                        f"http://localhost:8000/business_events/{business_event_id}/status",
-                        json={"status": "已入账"},
+                    # 获取关联的审批ID
+                    related_response = requests.get(
+                        f"http://localhost:8000/business_events/{business_event_id}/related",
                         headers={"Authorization": f"Bearer {self.token}"}
                     )
-                except:
-                    # 忽略状态更新错误
+                    
+                    if related_response.status_code == 200:
+                        related_data = related_response.json()
+                        approvals = related_data.get("approvals", [])
+                        
+                        if approvals:
+                            # 获取最新的审批ID
+                            approval_id = approvals[0]["id"]
+                            
+                            # 更新业务事件状态
+                            status_response = requests.post(
+                                f"http://localhost:8000/approvals/{approval_id}/update-business-status",
+                                json={"status": "已入账", "remarks": "财务记录已创建"},
+                                headers={"Authorization": f"Bearer {self.token}"}
+                            )
+                            print(f"状态更新响应: {status_response.status_code}, {status_response.text}")
+                except Exception as e:
+                    print(f"获取审批ID或更新状态错误: {str(e)}")
+                    # 记录错误，但不影响主流程
                     pass
                 
                 self.accept()
             else:
                 QMessageBox.warning(self, "添加失败", f"无法添加财务记录: {response.text}")
         except Exception as e:
+            import traceback
+            error_details = traceback.format_exc()
+            print(f"保存数据时发生错误: {str(e)}")
+            print(f"错误详情: {error_details}")
             QMessageBox.warning(self, "错误", f"保存数据时发生错误: {str(e)}")
 
 class FinancialRecordDetailDialog(QDialog):

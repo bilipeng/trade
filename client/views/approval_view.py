@@ -27,11 +27,31 @@ class ApprovalView(QWidget):
         
         # 标题与工具栏
         top_layout = QHBoxLayout()
-        title_label = QLabel("待审批事项")
+        title_label = QLabel("审批管理")
         title_label.setProperty("class", "view-title")
         top_layout.addWidget(title_label)
         
         top_layout.addStretch()
+        
+        # 状态筛选下拉菜单
+        filter_layout = QHBoxLayout()
+        filter_layout.addWidget(QLabel("状态筛选:"))
+        self.status_filter = QComboBox()
+        self.status_filter.addItem("全部", None)
+        self.status_filter.addItem("待审批", "待审批")
+        self.status_filter.addItem("已通过", "已通过")
+        self.status_filter.addItem("已拒绝", "已拒绝")
+        self.status_filter.currentIndexChanged.connect(self.filter_by_status)
+        filter_layout.addWidget(self.status_filter)
+        top_layout.addLayout(filter_layout)
+        
+        # 添加刷新按钮
+        refresh_button = QPushButton("刷新审批数据")
+        refresh_button.setProperty("class", "primary")
+        refresh_button.clicked.connect(self.refresh_data)
+        top_layout.addWidget(refresh_button)
+        
+        main_layout.addLayout(top_layout)
         
         # 过滤下拉框
         self.filter_combo = QComboBox()
@@ -41,13 +61,6 @@ class ApprovalView(QWidget):
         self.filter_combo.addItem("项目支出", "项目支出")
         self.filter_combo.currentIndexChanged.connect(self.filter_data)
         top_layout.addWidget(self.filter_combo)
-        
-        # 刷新按钮
-        refresh_button = QPushButton("刷新")
-        refresh_button.clicked.connect(self.refresh_data)
-        top_layout.addWidget(refresh_button)
-        
-        main_layout.addLayout(top_layout)
         
         # 使用分割器创建左右布局
         splitter = QSplitter(Qt.Orientation.Horizontal)
@@ -84,20 +97,34 @@ class ApprovalView(QWidget):
         
         main_layout.addWidget(splitter)
     
-    def load_data(self):
+    def load_data(self, status=None):
         """加载审批数据"""
         try:
+            print(f"当前用户: {self.user_data}")
+            
+            # 构建URL
+            url = "http://localhost:8000/approvals"
+            if status:
+                url += f"?status={status}"
+            
             response = requests.get(
-                "http://localhost:8000/approvals",
+                url,
                 headers={"Authorization": f"Bearer {self.token}"}
             )
             
+            print(f"请求URL: {url}")
+            print(f"响应状态码: {response.status_code}")
+            print(f"响应内容: {response.text}")
+            
             if response.status_code == 200:
                 self.data = response.json()
+                print(f"解析后的数据: {self.data}")
+                print(f"数据长度: {len(self.data)}")
                 self.display_data()
             else:
                 QMessageBox.warning(self, "加载失败", "无法加载审批数据")
         except Exception as e:
+            print(f"加载审批数据时发生错误: {str(e)}")
             QMessageBox.warning(self, "错误", f"加载审批数据时发生错误: {str(e)}")
     
     def display_data(self):
@@ -385,7 +412,49 @@ class ApprovalView(QWidget):
     
     def refresh_data(self):
         """刷新数据"""
-        self.load_data()
+        # 先加载所有待审批记录
+        self.load_data("待审批")
+        if len(self.data) > 0:
+            QMessageBox.information(self, "刷新成功", f"找到 {len(self.data)} 条待审批记录")
+        else:
+            # 如果没有待审批记录，加载所有记录
+            self.load_data()
+            QMessageBox.information(self, "刷新成功", "审批数据已刷新")
+
+    def filter_by_status(self):
+        """按状态筛选"""
+        status = self.status_filter.currentData()
+        self.load_data(status)
+
+    def load_business_approvals(self, business_id):
+        """加载特定业务事件的审批任务"""
+        try:
+            response = requests.get(
+                f"http://localhost:8000/business_events/{business_id}/approvals",
+                headers={"Authorization": f"Bearer {self.token}"}
+            )
+            
+            print(f"查询业务事件 {business_id} 的审批任务")
+            print(f"响应状态码: {response.status_code}")
+            print(f"响应内容: {response.text}")
+            
+            if response.status_code == 200:
+                approvals = response.json()
+                if approvals and len(approvals) > 0:
+                    QMessageBox.information(self, "查询结果", f"找到 {len(approvals)} 条审批记录")
+                    self.data = approvals
+                    self.display_data()
+                    return True
+                else:
+                    QMessageBox.warning(self, "查询结果", "没有找到审批记录")
+                    return False
+            else:
+                QMessageBox.warning(self, "查询失败", "无法获取审批记录")
+                return False
+        except Exception as e:
+            print(f"查询审批记录时发生错误: {str(e)}")
+            QMessageBox.warning(self, "错误", f"查询审批记录时发生错误: {str(e)}")
+            return False
 
 class ApprovalDetailDialog(QDialog):
     """审批详情对话框"""

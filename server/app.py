@@ -351,30 +351,42 @@ async def create_financial_record(record: FinancialRecord, current_user = Depend
 
 # 审批API
 @app.get("/approvals")
-async def get_approvals(current_user = Depends(get_current_user)):
+async def get_approvals(status: str = None, current_user = Depends(get_current_user)):
     conn = get_db_connection()
     
-    # 管理员可以查看所有审批
-    if current_user["role"] == "管理员":
-        approvals = conn.execute("""
-            SELECT a.*, be.project_name, be.event_type, be.amount, u.username as approver_name
-            FROM approvals a
-            JOIN business_events be ON a.business_event_id = be.id
-            JOIN users u ON a.approver_id = u.id
-            ORDER BY a.created_at DESC
-        """).fetchall()
-    else:
-        # 普通用户只能查看自己的待审批记录
-        approvals = conn.execute("""
-            SELECT a.*, be.project_name, be.event_type, be.amount, u.username as approver_name
-            FROM approvals a
-            JOIN business_events be ON a.business_event_id = be.id
-            JOIN users u ON a.approver_id = u.id
-            WHERE a.approver_id = ? AND a.status = '待审批'
-            ORDER BY a.created_at DESC
-        """, (current_user["id"],)).fetchall()
+    # 构建基本查询
+    query = """
+        SELECT a.*, be.project_name, be.event_type, be.amount, u.username as approver_name
+        FROM approvals a
+        JOIN business_events be ON a.business_event_id = be.id
+        JOIN users u ON a.approver_id = u.id
+    """
+    params = []
     
+    # 添加条件
+    conditions = []
+    
+    # 非管理员只能查看自己的审批
+    if current_user["role"] != "管理员":
+        conditions.append("a.approver_id = ?")
+        params.append(current_user["id"])
+    
+    # 如果指定了状态，添加状态筛选
+    if status:
+        conditions.append("a.status = ?")
+        params.append(status)
+    
+    # 组合条件
+    if conditions:
+        query += " WHERE " + " AND ".join(conditions)
+    
+    # 添加排序
+    query += " ORDER BY a.created_at DESC"
+    
+    # 执行查询
+    approvals = conn.execute(query, params).fetchall()
     conn.close()
+    
     return [dict(approval) for approval in approvals]
 
 @app.post("/approvals/{approval_id}/approve")
@@ -643,6 +655,8 @@ async def get_business_event_related(event_id: int, current_user = Depends(get_c
 # 提交业务事件到审批流程
 @app.post("/business_events/{event_id}/submit-to-approval")
 async def submit_to_approval(event_id: int, current_user = Depends(get_current_user)):
+    print(f"提交业务事件 {event_id} 到审批流程，用户: {current_user['username']}")
+    
     conn = get_db_connection()
     cursor = conn.cursor()
     
@@ -650,13 +664,16 @@ async def submit_to_approval(event_id: int, current_user = Depends(get_current_u
     event = cursor.execute("SELECT * FROM business_events WHERE id = ?", (event_id,)).fetchone()
     if not event:
         conn.close()
+        print(f"业务事件 {event_id} 不存在")
         raise HTTPException(status_code=404, detail="业务事件不存在")
     
     event_data = dict(event)
+    print(f"业务事件数据: {event_data}")
     
     # 检查当前状态是否允许提交审批
     if event_data["status"] not in ["新建", "待审批"]:
         conn.close()
+        print(f"业务事件状态 {event_data['status']} 不允许提交审批")
         raise HTTPException(status_code=400, detail="当前状态不允许提交审批")
     
     # 创建审批任务（如果尚未创建）
@@ -665,16 +682,48 @@ async def submit_to_approval(event_id: int, current_user = Depends(get_current_u
         (event_id,)
     ).fetchone()
     
+    print(f"现有审批数量: {existing_approvals['count']}")
+    
     if existing_approvals["count"] == 0:
-        # 创建审批流程
-        cursor.execute("""
-            INSERT INTO approvals (business_event_id, approver_id, approval_level, status)
-            SELECT ?, approver_id, approval_level, '待审批'
-            FROM approval_configs
+        # 查询匹配的审批配置
+        configs = cursor.execute("""
+            SELECT * FROM approval_configs
             WHERE event_type = ? AND department_id = ? AND is_active = 1
             AND (amount_threshold IS NULL OR amount_threshold <= ?)
             ORDER BY approval_level
-        """, (event_id, event_data["event_type"], event_data["department_id"], event_data["amount"]))
+        """, (event_data["event_type"], event_data["department_id"], event_data["amount"])).fetchall()
+        
+        print(f"匹配的审批配置数量: {len(configs) if configs else 0}")
+        
+        # 如果没有找到匹配的审批配置，使用默认配置
+        if not configs or len(configs) == 0:
+            print("没有找到匹配的审批配置，使用默认配置")
+            # 默认分配给管理员审批
+            cursor.execute("""
+                INSERT INTO approvals (business_event_id, approver_id, approval_level, status)
+                SELECT ?, id, 1, '待审批'
+                FROM users
+                WHERE role = '管理员'
+                LIMIT 1
+            """, (event_id,))
+            
+            inserted = cursor.execute("SELECT changes() as changes").fetchone()["changes"]
+            if inserted == 0:
+                print("警告: 无法找到管理员用户")
+                # 尝试分配给创建者本人审批
+                cursor.execute("""
+                    INSERT INTO approvals (business_event_id, approver_id, approval_level, status)
+                    VALUES (?, ?, 1, '待审批')
+                """, (event_id, current_user["id"]))
+        else:
+            # 创建审批流程
+            for config in configs:
+                config_dict = dict(config)
+                print(f"创建审批任务: 审批人ID={config_dict['approver_id']}, 级别={config_dict['approval_level']}")
+                cursor.execute("""
+                    INSERT INTO approvals (business_event_id, approver_id, approval_level, status)
+                    VALUES (?, ?, ?, '待审批')
+                """, (event_id, config_dict["approver_id"], config_dict["approval_level"]))
     
     # 更新业务事件状态
     cursor.execute(
@@ -686,8 +735,8 @@ async def submit_to_approval(event_id: int, current_user = Depends(get_current_u
     try:
         cursor.execute("""
             INSERT INTO status_history (business_event_id, timestamp, status, operator, remarks)
-            VALUES (?, datetime('now'), '待审批', ?, '提交到审批流程')
-        """, (event_id, current_user["username"]))
+            VALUES (?, datetime('now'), ?, ?, '提交到审批流程')
+        """, (event_id, "待审批", current_user["username"]))
     except:
         # 如果没有状态历史表，则忽略此步骤
         pass
@@ -745,6 +794,27 @@ async def update_business_status(
     conn.close()
     
     return {"message": f"业务事件状态已更新为 {new_status}"}
+
+@app.get("/business_events/{event_id}/approvals")
+async def get_business_approvals(event_id: int, current_user = Depends(get_current_user)):
+    """获取特定业务事件的所有审批任务"""
+    conn = get_db_connection()
+    
+    approvals = conn.execute("""
+        SELECT a.*, be.project_name, be.event_type, be.amount, u.username as approver_name
+        FROM approvals a
+        JOIN business_events be ON a.business_event_id = be.id
+        JOIN users u ON a.approver_id = u.id
+        WHERE a.business_event_id = ?
+        ORDER BY a.approval_level
+    """, (event_id,)).fetchall()
+    
+    conn.close()
+    
+    if not approvals:
+        return {"message": "没有找到与此业务事件关联的审批记录", "approvals": []}
+    
+    return [dict(approval) for approval in approvals]
 
 if __name__ == "__main__":
     import uvicorn

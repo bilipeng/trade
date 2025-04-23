@@ -256,18 +256,40 @@ class BusinessEventView(QWidget):
     def submit_to_approval(self, business_id):
         """提交业务事件至审批流程"""
         try:
+            print(f"提交业务事件 {business_id} 到审批流程")
+            
             # 调用新API将业务事件提交到审批流程
             response = requests.post(
                 f"http://localhost:8000/business_events/{business_id}/submit-to-approval",
                 headers={"Authorization": f"Bearer {self.token}"}
             )
             
+            print(f"响应状态码: {response.status_code}")
+            print(f"响应内容: {response.text}")
+            
             if response.status_code == 200:
-                QMessageBox.information(self, "提交成功", "业务事件已成功提交到审批流程")
+                reply = QMessageBox.question(
+                    self, "提交成功", 
+                    "业务事件已成功提交到审批流程，是否立即跳转到审批管理界面？",
+                    QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+                    QMessageBox.StandardButton.Yes
+                )
+                
                 self.load_data()  # 刷新数据
+                
+                if reply == QMessageBox.StandardButton.Yes:
+                    # 发出信号，让主窗口切换到审批管理界面
+                    # 此处需要根据具体的信号实现调整
+                    # 如果您的BusinessEventView类中没有定义信号，可以通过其他方式实现界面切换
+                    # 例如，可以通过主窗口提供的方法进行切换
+                    if hasattr(self.parent(), "switch_to_approval_view"):
+                        self.parent().switch_to_approval_view(business_id)
+                    else:
+                        QMessageBox.information(self, "提示", "请手动切换到审批管理界面并刷新数据")
             else:
                 QMessageBox.warning(self, "提交失败", f"提交到审批流程失败: {response.text}")
         except Exception as e:
+            print(f"提交过程中发生错误: {str(e)}")
             QMessageBox.warning(self, "错误", f"提交过程中发生错误: {str(e)}")
 
 class BusinessEventDialog(QDialog):

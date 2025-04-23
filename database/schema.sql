@@ -182,6 +182,17 @@ CREATE TABLE IF NOT EXISTS report_configs (
     FOREIGN KEY (created_by) REFERENCES users (id)
 );
 
+-- 状态历史表
+CREATE TABLE IF NOT EXISTS status_history (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    business_event_id INTEGER NOT NULL,         -- 业务事件ID
+    timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP, -- 状态变更时间
+    status TEXT NOT NULL,                       -- 状态
+    operator TEXT NOT NULL,                     -- 操作人
+    remarks TEXT,                               -- 备注
+    FOREIGN KEY (business_event_id) REFERENCES business_events (id)
+);
+
 -- 初始化数据
 
 -- 添加系统管理员账户

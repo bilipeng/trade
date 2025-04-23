@@ -9,6 +9,8 @@ from pydantic import BaseModel
 from datetime import datetime, timedelta
 import jwt
 from passlib.context import CryptContext
+from fastapi.responses import JSONResponse
+from fastapi import Request
 
 # 创建FastAPI实例
 app = FastAPI(title="业财融合管理系统API", description="业财融合管理系统的后端API")
@@ -391,126 +393,162 @@ async def get_approvals(status: str = None, current_user = Depends(get_current_u
 
 @app.post("/approvals/{approval_id}/approve")
 async def approve(approval_id: int, current_user = Depends(get_current_user)):
-    conn = get_db_connection()
-    cursor = conn.cursor()
-    
-    # 验证审批流程是否存在
-    approval = cursor.execute("""
-        SELECT a.*, e.id as event_id, e.status as event_status 
-        FROM approvals a
-        JOIN business_events e ON a.business_event_id = e.id
-        WHERE a.id = ?
-    """, (approval_id,)).fetchone()
-    
-    if not approval:
-        conn.close()
-        raise HTTPException(status_code=404, detail="审批记录不存在")
-    
-    # 验证用户是否有权限审批
-    if approval["approver_id"] != current_user["id"] and current_user["role"] != "管理员":
-        conn.close()
-        raise HTTPException(status_code=403, detail="您没有权限执行此审批")
-    
-    # 检查审批流程状态
-    if approval["status"] != "待审批":
-        conn.close()
-        raise HTTPException(status_code=400, detail="此审批已处理，无法重复操作")
-    
-    # 更新审批状态
-    cursor.execute(
-        "UPDATE approvals SET status = '已通过', approved_at = datetime('now') WHERE id = ?",
-        (approval_id,)
-    )
-    
-    # 检查是否有下一级审批
-    next_approval = cursor.execute("""
-        SELECT id FROM approvals 
-        WHERE business_event_id = ? AND approval_level > ? AND status = '待审批'
-        ORDER BY approval_level LIMIT 1
-    """, (approval["business_event_id"], approval["approval_level"])).fetchone()
-    
-    # 根据是否有下一级审批更新业务事件状态
-    if next_approval:
-        # 还有下一级审批，业务事件状态保持"审批中"
-        new_status = "审批中"
-    else:
-        # 所有审批已完成，业务事件状态更新为"已审批"
-        new_status = "已审批"
-    
-    # 更新业务事件状态
-    cursor.execute(
-        "UPDATE business_events SET status = ? WHERE id = ?",
-        (new_status, approval["business_event_id"])
-    )
-    
-    # 记录状态变更历史（如果有状态历史表）
+    conn = None
     try:
-        cursor.execute("""
-            INSERT INTO status_history (business_event_id, timestamp, status, operator, remarks)
-            VALUES (?, datetime('now'), ?, ?, '审批通过')
-        """, (approval["business_event_id"], new_status, current_user["username"]))
-    except:
-        # 如果没有状态历史表，则忽略此步骤
-        pass
-    
-    conn.commit()
-    conn.close()
-    
-    return {"message": "审批已通过", "next_approval": next_approval is not None}
+        print(f"开始处理审批通过请求，审批ID: {approval_id}, 用户: {current_user['username']}")
+        
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        
+        # 验证审批流程是否存在
+        approval = cursor.execute("""
+            SELECT a.*, e.id as event_id, e.status as event_status 
+            FROM approvals a
+            JOIN business_events e ON a.business_event_id = e.id
+            WHERE a.id = ?
+        """, (approval_id,)).fetchone()
+        
+        print(f"查询审批记录结果: {approval}")
+        
+        if not approval:
+            raise HTTPException(status_code=404, detail="审批记录不存在")
+        
+        # 验证用户是否有权限审批
+        if approval["approver_id"] != current_user["id"] and current_user["role"] != "管理员":
+            raise HTTPException(status_code=403, detail="您没有权限执行此审批")
+        
+        # 检查审批流程状态
+        if approval["status"] != "待审批":
+            raise HTTPException(status_code=400, detail="此审批已处理，无法重复操作")
+        
+        # 更新审批状态 - 修正列名为approval_date
+        cursor.execute(
+            "UPDATE approvals SET status = '已通过', approval_date = datetime('now') WHERE id = ?",
+            (approval_id,)
+        )
+        
+        # 检查是否有下一级审批
+        next_approval = cursor.execute("""
+            SELECT id FROM approvals 
+            WHERE business_event_id = ? AND approval_level > ? AND status = '待审批'
+            ORDER BY approval_level LIMIT 1
+        """, (approval["business_event_id"], approval["approval_level"])).fetchone()
+        
+        # 根据是否有下一级审批更新业务事件状态
+        if next_approval:
+            # 还有下一级审批，业务事件状态保持"审批中"
+            new_status = "审批中"
+        else:
+            # 所有审批已完成，业务事件状态更新为"已审批"
+            new_status = "已审批"
+        
+        print(f"更新业务事件状态为: {new_status}")
+        
+        # 更新业务事件状态
+        cursor.execute(
+            "UPDATE business_events SET status = ? WHERE id = ?",
+            (new_status, approval["business_event_id"])
+        )
+        
+        # 记录状态变更历史
+        try:
+            print("尝试记录状态历史...")
+            cursor.execute("""
+                INSERT INTO status_history (business_event_id, timestamp, status, operator, remarks)
+                VALUES (?, datetime('now'), ?, ?, '审批通过')
+            """, (approval["business_event_id"], new_status, current_user["username"]))
+            print("状态历史记录成功")
+        except Exception as e:
+            # 记录错误但不中断流程
+            print(f"记录状态历史失败: {str(e)}")
+        
+        print("提交事务...")
+        conn.commit()
+        print("审批处理完成")
+        
+        return {"message": "审批已通过", "next_approval": next_approval is not None}
+    except HTTPException as e:
+        # 重新抛出HTTP异常
+        raise e
+    except Exception as e:
+        # 记录错误并返回友好的错误信息
+        print(f"审批过程中发生错误: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"审批处理失败: {str(e)}")
+    finally:
+        # 确保连接被关闭
+        if conn:
+            conn.close()
 
 @app.post("/approvals/{approval_id}/reject")
 async def reject(approval_id: int, current_user = Depends(get_current_user)):
-    conn = get_db_connection()
-    cursor = conn.cursor()
-    
-    # 验证审批流程是否存在
-    approval = cursor.execute("""
-        SELECT a.*, e.id as event_id 
-        FROM approvals a
-        JOIN business_events e ON a.business_event_id = e.id
-        WHERE a.id = ?
-    """, (approval_id,)).fetchone()
-    
-    if not approval:
-        conn.close()
-        raise HTTPException(status_code=404, detail="审批记录不存在")
-    
-    # 验证用户是否有权限审批
-    if approval["approver_id"] != current_user["id"] and current_user["role"] != "管理员":
-        conn.close()
-        raise HTTPException(status_code=403, detail="您没有权限执行此审批")
-    
-    # 检查审批流程状态
-    if approval["status"] != "待审批":
-        conn.close()
-        raise HTTPException(status_code=400, detail="此审批已处理，无法重复操作")
-    
-    # 更新审批状态
-    cursor.execute(
-        "UPDATE approvals SET status = '已拒绝', approved_at = datetime('now') WHERE id = ?",
-        (approval_id,)
-    )
-    
-    # 更新业务事件状态为"已拒绝"
-    cursor.execute(
-        "UPDATE business_events SET status = '已拒绝' WHERE id = ?",
-        (approval["business_event_id"],)
-    )
-    
-    # 记录状态变更历史（如果有状态历史表）
+    conn = None
     try:
-        cursor.execute("""
-            INSERT INTO status_history (business_event_id, timestamp, status, operator, remarks)
-            VALUES (?, datetime('now'), '已拒绝', ?, '审批拒绝')
-        """, (approval["business_event_id"], current_user["username"]))
-    except:
-        # 如果没有状态历史表，则忽略此步骤
-        pass
-    
-    conn.commit()
-    conn.close()
-    
-    return {"message": "审批已拒绝"}
+        print(f"开始处理审批拒绝请求，审批ID: {approval_id}, 用户: {current_user['username']}")
+        
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        
+        # 验证审批流程是否存在
+        approval = cursor.execute("""
+            SELECT a.*, e.id as event_id 
+            FROM approvals a
+            JOIN business_events e ON a.business_event_id = e.id
+            WHERE a.id = ?
+        """, (approval_id,)).fetchone()
+        
+        print(f"查询审批记录结果: {approval}")
+        
+        if not approval:
+            raise HTTPException(status_code=404, detail="审批记录不存在")
+        
+        # 验证用户是否有权限审批
+        if approval["approver_id"] != current_user["id"] and current_user["role"] != "管理员":
+            raise HTTPException(status_code=403, detail="您没有权限执行此审批")
+        
+        # 检查审批流程状态
+        if approval["status"] != "待审批":
+            raise HTTPException(status_code=400, detail="此审批已处理，无法重复操作")
+        
+        # 更新审批状态 - 修正列名为approval_date
+        cursor.execute(
+            "UPDATE approvals SET status = '已拒绝', approval_date = datetime('now') WHERE id = ?",
+            (approval_id,)
+        )
+        
+        # 更新业务事件状态为"已拒绝"
+        cursor.execute(
+            "UPDATE business_events SET status = '已拒绝' WHERE id = ?",
+            (approval["business_event_id"],)
+        )
+        
+        # 记录状态变更历史
+        try:
+            print("尝试记录状态历史...")
+            cursor.execute("""
+                INSERT INTO status_history (business_event_id, timestamp, status, operator, remarks)
+                VALUES (?, datetime('now'), '已拒绝', ?, '审批拒绝')
+            """, (approval["business_event_id"], current_user["username"]))
+            print("状态历史记录成功")
+        except Exception as e:
+            # 记录错误但不中断流程
+            print(f"记录状态历史失败: {str(e)}")
+        
+        print("提交事务...")
+        conn.commit()
+        print("审批拒绝处理完成")
+        
+        return {"message": "审批已拒绝"}
+    except HTTPException as e:
+        # 重新抛出HTTP异常
+        raise e
+    except Exception as e:
+        # 记录错误并返回友好的错误信息
+        print(f"审批拒绝过程中发生错误: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"审批拒绝失败: {str(e)}")
+    finally:
+        # 确保连接被关闭
+        if conn:
+            conn.close()
 
 # 预算API
 @app.get("/budgets")
@@ -815,6 +853,20 @@ async def get_business_approvals(event_id: int, current_user = Depends(get_curre
         return {"message": "没有找到与此业务事件关联的审批记录", "approvals": []}
     
     return [dict(approval) for approval in approvals]
+
+# 全局异常处理器
+@app.exception_handler(Exception)
+async def global_exception_handler(request: Request, exc: Exception):
+    # 记录异常
+    print(f"全局异常: {str(exc)}")
+    import traceback
+    traceback.print_exc()
+    
+    # 返回友好的错误信息
+    return JSONResponse(
+        status_code=500,
+        content={"detail": f"服务器内部错误: {str(exc)}"}
+    )
 
 if __name__ == "__main__":
     import uvicorn

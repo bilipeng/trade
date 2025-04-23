@@ -353,14 +353,27 @@ async def create_financial_record(record: FinancialRecord, current_user = Depend
 @app.get("/approvals")
 async def get_approvals(current_user = Depends(get_current_user)):
     conn = get_db_connection()
-    approvals = conn.execute("""
-        SELECT a.*, be.project_name, be.event_type, be.amount, u.username as approver_name
-        FROM approvals a
-        JOIN business_events be ON a.business_event_id = be.id
-        JOIN users u ON a.approver_id = u.id
-        WHERE a.approver_id = ? AND a.status = '待审批'
-        ORDER BY a.created_at DESC
-    """, (current_user["id"],)).fetchall()
+    
+    # 管理员可以查看所有审批
+    if current_user["role"] == "管理员":
+        approvals = conn.execute("""
+            SELECT a.*, be.project_name, be.event_type, be.amount, u.username as approver_name
+            FROM approvals a
+            JOIN business_events be ON a.business_event_id = be.id
+            JOIN users u ON a.approver_id = u.id
+            ORDER BY a.created_at DESC
+        """).fetchall()
+    else:
+        # 普通用户只能查看自己的待审批记录
+        approvals = conn.execute("""
+            SELECT a.*, be.project_name, be.event_type, be.amount, u.username as approver_name
+            FROM approvals a
+            JOIN business_events be ON a.business_event_id = be.id
+            JOIN users u ON a.approver_id = u.id
+            WHERE a.approver_id = ? AND a.status = '待审批'
+            ORDER BY a.created_at DESC
+        """, (current_user["id"],)).fetchall()
+    
     conn.close()
     return [dict(approval) for approval in approvals]
 

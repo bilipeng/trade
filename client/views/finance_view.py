@@ -350,16 +350,18 @@ class FinancialRecordView(QWidget):
             if response.status_code == 200:
                 record_data = response.json()
                 
-                # 查询关联的业务事件
+                # 如果有关联的业务事件，获取业务事件详情
                 event_data = None
                 if "business_event_id" in record_data and record_data["business_event_id"]:
-                    event_response = requests.get(
-                        f"http://localhost:8000/business_events/{record_data['business_event_id']}",
-                        headers={"Authorization": f"Bearer {self.token}"}
-                    )
-                    
-                    if event_response.status_code == 200:
-                        event_data = event_response.json()
+                    try:
+                        event_response = requests.get(
+                            f"http://localhost:8000/business_events/{record_data['business_event_id']}",
+                            headers={"Authorization": f"Bearer {self.token}"}
+                        )
+                        if event_response.status_code == 200:
+                            event_data = event_response.json()
+                    except:
+                        pass
                 
                 dialog = FinancialRecordDetailDialog(record_data, event_data)
                 dialog.exec()
@@ -367,6 +369,26 @@ class FinancialRecordView(QWidget):
                 QMessageBox.warning(self, "查询失败", "无法获取财务记录详情")
         except Exception as e:
             QMessageBox.warning(self, "错误", f"查询详情时发生错误: {str(e)}")
+    
+    def highlight_record(self, record_id):
+        """高亮显示指定的财务记录"""
+        # 切换到财务记录选项卡
+        if hasattr(self, "tabs"):
+            self.tabs.setCurrentIndex(1)  # 切换到财务记录选项卡
+        
+        # 刷新数据
+        self.load_data()
+        
+        # 查找并高亮显示对应的行
+        for row in range(self.table.rowCount()):
+            if self.table.item(row, 0).text() == str(record_id):
+                # 选中该行
+                self.table.selectRow(row)
+                # 滚动到该行
+                self.table.scrollToItem(self.table.item(row, 0))
+                # 显示详情
+                self.show_detail(record_id)
+                break
 
 class FinancialRecordDialog(QDialog):
     """财务记录添加对话框"""

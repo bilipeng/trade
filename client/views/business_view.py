@@ -240,18 +240,81 @@ class BusinessEventView(QWidget):
     
     def view_approval(self, approval_id):
         """查看关联的审批记录"""
-        QMessageBox.information(self, "功能开发中", f"查看审批记录功能开发中，审批ID: {approval_id}")
-        # 待实现：跳转到审批详情页面
+        try:
+            # 获取审批记录详情
+            response = requests.get(
+                f"http://localhost:8000/approvals/{approval_id}",
+                headers={"Authorization": f"Bearer {self.token}"}
+            )
+            
+            if response.status_code == 200:
+                approval_data = response.json()
+                
+                # 找到主窗口
+                main_window = self.window()
+                if main_window and hasattr(main_window, "content_tabs") and hasattr(main_window, "approval_view"):
+                    # 切换到审批管理选项卡
+                    main_window.switch_to_approval_view(approval_id)
+                else:
+                    QMessageBox.information(self, "提示", "请手动切换到审批管理界面查看详情")
+            else:
+                QMessageBox.warning(self, "查询失败", f"无法获取审批记录: {response.text}")
+        except Exception as e:
+            QMessageBox.warning(self, "错误", f"查看审批记录时发生错误: {str(e)}")
     
     def view_finance(self, finance_id):
         """查看关联的财务记录"""
-        QMessageBox.information(self, "功能开发中", f"查看财务记录功能开发中，财务ID: {finance_id}")
-        # 待实现：跳转到财务记录详情页面
+        try:
+            # 获取财务记录详情
+            response = requests.get(
+                f"http://localhost:8000/financial_records/{finance_id}",
+                headers={"Authorization": f"Bearer {self.token}"}
+            )
+            
+            if response.status_code == 200:
+                finance_data = response.json()
+                
+                # 找到主窗口
+                main_window = self.window()
+                if main_window and hasattr(main_window, "content_tabs") and hasattr(main_window, "finance_view"):
+                    # 切换到财务管理选项卡
+                    main_window.switch_to_finance_view()
+                    
+                    # 高亮显示对应的财务记录
+                    main_window.finance_view.highlight_record(finance_id)
+                else:
+                    QMessageBox.information(self, "提示", "请手动切换到财务管理界面查看详情")
+            else:
+                QMessageBox.warning(self, "查询失败", f"无法获取财务记录: {response.text}")
+        except Exception as e:
+            QMessageBox.warning(self, "错误", f"查看财务记录时发生错误: {str(e)}")
     
     def create_finance_record(self, business_id):
         """为已审批的业务事件创建财务记录"""
-        QMessageBox.information(self, "功能开发中", f"为业务事件 ID: {business_id} 创建财务记录功能开发中")
-        # 待实现：打开财务记录创建对话框，预填充业务数据
+        try:
+            # 获取业务事件详情
+            response = requests.get(
+                f"http://localhost:8000/business_events/{business_id}",
+                headers={"Authorization": f"Bearer {self.token}"}
+            )
+            
+            if response.status_code == 200:
+                event_data = response.json()
+                
+                # 找到主窗口
+                main_window = self.window()
+                if main_window and hasattr(main_window, "content_tabs") and hasattr(main_window, "finance_view"):
+                    # 切换到财务管理选项卡
+                    main_window.switch_to_finance_view()
+                    
+                    # 调用财务视图的创建记录方法，传入业务事件数据
+                    main_window.finance_view.create_from_business(business_id)
+                else:
+                    QMessageBox.information(self, "提示", "请手动切换到财务管理界面创建财务记录")
+            else:
+                QMessageBox.warning(self, "查询失败", f"无法获取业务事件详情: {response.text}")
+        except Exception as e:
+            QMessageBox.warning(self, "错误", f"创建财务记录时发生错误: {str(e)}")
     
     def submit_to_approval(self, business_id):
         """提交业务事件至审批流程"""
@@ -282,8 +345,9 @@ class BusinessEventView(QWidget):
                     # 此处需要根据具体的信号实现调整
                     # 如果您的BusinessEventView类中没有定义信号，可以通过其他方式实现界面切换
                     # 例如，可以通过主窗口提供的方法进行切换
-                    if hasattr(self.parent(), "switch_to_approval_view"):
-                        self.parent().switch_to_approval_view(business_id)
+                    main_window = self.window()
+                    if main_window and hasattr(main_window, "switch_to_approval_view"):
+                        main_window.switch_to_approval_view(None)  # 切换到审批管理界面
                     else:
                         QMessageBox.information(self, "提示", "请手动切换到审批管理界面并刷新数据")
             else:

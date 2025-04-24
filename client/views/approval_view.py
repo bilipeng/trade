@@ -441,8 +441,30 @@ class ApprovalView(QWidget):
     
     def create_finance_record(self, business_id):
         """创建财务记录"""
-        QMessageBox.information(self, "功能开发中", f"为业务事件 ID: {business_id} 创建财务记录功能正在开发中")
-        # 此处待实现财务记录创建功能
+        try:
+            # 获取业务事件详情
+            response = requests.get(
+                f"http://localhost:8000/business_events/{business_id}",
+                headers={"Authorization": f"Bearer {self.token}"}
+            )
+            
+            if response.status_code == 200:
+                event_data = response.json()
+                
+                # 找到主窗口
+                main_window = self.window()
+                if main_window and hasattr(main_window, "content_tabs") and hasattr(main_window, "finance_view"):
+                    # 切换到财务管理选项卡
+                    main_window.switch_to_finance_view()
+                    
+                    # 调用财务视图的创建记录方法，传入业务事件数据
+                    main_window.finance_view.create_from_business(business_id)
+                else:
+                    QMessageBox.information(self, "提示", "请手动切换到财务管理界面创建财务记录")
+            else:
+                QMessageBox.warning(self, "查询失败", f"无法获取业务事件详情: {response.text}")
+        except Exception as e:
+            QMessageBox.warning(self, "错误", f"创建财务记录时发生错误: {str(e)}")
     
     def refresh_data(self):
         """刷新数据"""
@@ -456,10 +478,39 @@ class ApprovalView(QWidget):
             QMessageBox.information(self, "刷新成功", "审批数据已刷新")
 
     def filter_by_status(self):
-        """按状态筛选"""
+        """根据状态过滤审批数据"""
         status = self.status_filter.currentData()
         self.load_data(status)
-
+    
+    def highlight_approval(self, approval_id):
+        """高亮显示指定的审批记录"""
+        # 刷新数据
+        self.load_data()
+        
+        # 查找并高亮显示对应的行
+        for row in range(self.table.rowCount()):
+            if self.table.item(row, 0).text() == str(approval_id):
+                # 选中该行
+                self.table.selectRow(row)
+                # 滚动到该行
+                self.table.scrollToItem(self.table.item(row, 0))
+                # 显示详情
+                business_id = None
+                # 获取业务事件ID
+                try:
+                    business_cell = self.table.cellWidget(row, 1)
+                    for child in business_cell.children():
+                        if isinstance(child, QPushButton):
+                            business_id = int(child.text())
+                            break
+                except Exception as e:
+                    print(f"获取业务事件ID时出错: {str(e)}")
+                
+                if business_id:
+                    # 显示详情
+                    self.show_detail(approval_id, business_id)
+                break
+    
     def load_business_approvals(self, business_id):
         """加载特定业务事件的审批任务"""
         try:

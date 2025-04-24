@@ -4,7 +4,8 @@ import requests
 from PyQt6.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout, 
                            QHBoxLayout, QPushButton, QLabel, QStackedWidget,
                            QMessageBox, QStatusBar, QToolBar, QSizePolicy, QFrame,
-                           QTabWidget, QToolButton, QMenu, QSplitter)
+                           QTabWidget, QToolButton, QMenu, QSplitter, QDialog, QFormLayout,
+                           QComboBox, QCheckBox)
 from PyQt6.QtCore import Qt, QSettings, pyqtSignal, QSize
 from PyQt6.QtGui import QIcon, QAction, QFont, QColor, QPalette, QPixmap
 
@@ -194,6 +195,7 @@ class MainWindow(QMainWindow):
         settings_btn = QPushButton("⚙ 系统设置")
         settings_btn.setObjectName("settings_btn")
         settings_btn.setToolTip("调整系统设置和个人偏好")
+        settings_btn.clicked.connect(self.show_settings_dialog)
         nav_layout.addWidget(settings_btn)
         
         # 添加退出按钮
@@ -242,11 +244,13 @@ class MainWindow(QMainWindow):
         # 添加刷新按钮
         refresh_action = QAction("🔄 刷新", self)
         refresh_action.setToolTip("刷新当前视图数据")
+        refresh_action.triggered.connect(self.refresh_current_view)
         quick_actions.addAction(refresh_action)
         
         # 添加帮助按钮
         help_action = QAction("❓ 帮助", self) 
         help_action.setToolTip("获取功能帮助")
+        help_action.triggered.connect(self.show_help)
         quick_actions.addAction(help_action)
         
         # 添加通知按钮
@@ -417,6 +421,188 @@ class MainWindow(QMainWindow):
                 event.ignore()
         else:
             event.accept()
+
+    def refresh_current_view(self):
+        """刷新当前视图的数据"""
+        current_widget = self.content_tabs.currentWidget()
+        
+        if hasattr(current_widget, "load_data"):
+            try:
+                # 显示刷新中的状态
+                self.statusBar.showMessage("正在刷新数据...", 2000)
+                
+                # 调用当前视图的load_data方法
+                current_widget.load_data()
+                
+                # 更新状态栏
+                self.statusBar.showMessage("数据刷新成功", 2000)
+            except Exception as e:
+                self.statusBar.showMessage(f"刷新失败: {str(e)}", 3000)
+                QMessageBox.warning(self, "刷新失败", f"刷新数据时发生错误: {str(e)}")
+        else:
+            self.statusBar.showMessage("当前视图不支持刷新", 2000)
+
+    def switch_to_business_view(self):
+        """切换到业务管理视图"""
+        if hasattr(self, "business_view"):
+            self.content_tabs.setCurrentWidget(self.business_view)
+            nav_button = self.findChild(QPushButton, "nav_业务管理")
+            if nav_button:
+                self.change_page(0, nav_button, "业务管理")
+
+    def switch_to_finance_view(self):
+        """切换到财务管理视图"""
+        if hasattr(self, "finance_view"):
+            self.content_tabs.setCurrentWidget(self.finance_view)
+            nav_button = self.findChild(QPushButton, "nav_财务管理")
+            if nav_button:
+                self.change_page(1, nav_button, "财务管理")
+
+    def switch_to_approval_view(self, approval_id=None):
+        """切换到审批管理视图"""
+        if hasattr(self, "approval_view"):
+            self.content_tabs.setCurrentWidget(self.approval_view)
+            nav_button = self.findChild(QPushButton, "nav_审批管理")
+            if nav_button:
+                self.change_page(2, nav_button, "审批管理")
+            
+            # 如果提供了审批ID，高亮显示对应的审批记录
+            if approval_id and hasattr(self.approval_view, "highlight_approval"):
+                self.approval_view.highlight_approval(approval_id)
+
+    def switch_to_budget_view(self):
+        """切换到预算管理视图"""
+        if hasattr(self, "budget_view"):
+            self.content_tabs.setCurrentWidget(self.budget_view)
+            nav_button = self.findChild(QPushButton, "nav_预算管理")
+            if nav_button:
+                self.change_page(3, nav_button, "预算管理")
+
+    def show_help(self):
+        """显示帮助信息"""
+        # 获取当前视图
+        current_widget = self.content_tabs.currentWidget()
+        help_title = "系统帮助"
+        help_content = "这是业财融合管理系统的帮助信息。"
+        
+        # 根据当前视图显示不同的帮助信息
+        if isinstance(current_widget, BusinessEventView):
+            help_title = "业务管理帮助"
+            help_content = """
+            <h3>业务管理模块使用指南</h3>
+            <p>业务管理模块用于创建和管理业务事件，包括合同、销售、采购和报销等类型的业务活动。</p>
+            <h4>主要功能：</h4>
+            <ul>
+                <li><b>新建业务事件</b>：点击"新建业务事件"按钮，填写相关信息后保存。</li>
+                <li><b>查看详情</b>：点击操作列中的"详情"按钮，查看业务事件的详细信息。</li>
+                <li><b>提交审批</b>：对于"新建"状态的业务事件，可以点击"提交审批"按钮将其提交到审批流程。</li>
+                <li><b>创建财务记录</b>：对于"已审批"状态的业务事件，可以点击"创建财务记录"按钮创建对应的财务记录。</li>
+            </ul>
+            <h4>搜索和筛选：</h4>
+            <p>可以使用顶部的搜索框搜索项目名称，使用状态下拉框筛选不同状态的业务事件。</p>
+            """
+        elif isinstance(current_widget, FinancialRecordView):
+            help_title = "财务管理帮助"
+            help_content = """
+            <h3>财务管理模块使用指南</h3>
+            <p>财务管理模块用于创建和管理财务记录，将业务事件转化为财务数据。</p>
+            <h4>主要功能：</h4>
+            <ul>
+                <li><b>新建财务记录</b>：点击"新建财务记录"按钮，选择关联的业务事件，填写财务信息后保存。</li>
+                <li><b>查看详情</b>：点击操作列中的"详情"按钮，查看财务记录的详细信息。</li>
+                <li><b>待处理业务</b>：在"待处理业务"选项卡中，可以查看已审批但尚未创建财务记录的业务事件。</li>
+            </ul>
+            <h4>注意事项：</h4>
+            <p>创建财务记录时，需要选择正确的会计科目和收支方向，确保财务数据的准确性。</p>
+            """
+        elif isinstance(current_widget, ApprovalView):
+            help_title = "审批管理帮助"
+            help_content = """
+            <h3>审批管理模块使用指南</h3>
+            <p>审批管理模块用于处理业务事件的审批流程。</p>
+            <h4>主要功能：</h4>
+            <ul>
+                <li><b>审批通过</b>：点击"通过"按钮，对业务事件进行审批通过操作。</li>
+                <li><b>审批拒绝</b>：点击"拒绝"按钮，对业务事件进行审批拒绝操作。</li>
+                <li><b>查看详情</b>：点击"详情"按钮，查看审批记录的详细信息。</li>
+            </ul>
+            <h4>审批流程：</h4>
+            <p>业务事件提交审批后，会根据审批配置分配给相应的审批人。审批通过后，业务事件状态变为"已审批"，可以创建财务记录。</p>
+            """
+        elif isinstance(current_widget, BudgetView):
+            help_title = "预算管理帮助"
+            help_content = """
+            <h3>预算管理模块使用指南</h3>
+            <p>预算管理模块用于管理和监控各部门的预算使用情况。</p>
+            <h4>主要功能：</h4>
+            <ul>
+                <li><b>预算编制</b>：设置各部门的预算金额。</li>
+                <li><b>预算执行</b>：查看各部门的预算使用情况。</li>
+                <li><b>预算分析</b>：分析预算执行情况，生成报表。</li>
+            </ul>
+            <h4>注意事项：</h4>
+            <p>预算管理需要与财务记录关联，确保预算使用情况的准确性。</p>
+            """
+        
+        # 创建帮助对话框
+        msg_box = QMessageBox(self)
+        msg_box.setWindowTitle(help_title)
+        msg_box.setTextFormat(Qt.TextFormat.RichText)
+        msg_box.setText(help_content)
+        msg_box.setStandardButtons(QMessageBox.StandardButton.Ok)
+        msg_box.exec()
+
+    def show_settings_dialog(self):
+        """显示系统设置对话框"""
+        # 创建一个简单的设置对话框
+        dialog = QDialog(self)
+        dialog.setWindowTitle("系统设置")
+        dialog.setMinimumWidth(400)
+        
+        layout = QVBoxLayout(dialog)
+        
+        # 添加设置选项
+        form_layout = QFormLayout()
+        
+        # 主题设置
+        theme_combo = QComboBox()
+        theme_combo.addItems(["默认主题", "暗色主题", "浅色主题"])
+        form_layout.addRow("界面主题:", theme_combo)
+        
+        # 字体大小设置
+        font_size_combo = QComboBox()
+        font_size_combo.addItems(["小", "中", "大"])
+        font_size_combo.setCurrentIndex(1)  # 默认选中"中"
+        form_layout.addRow("字体大小:", font_size_combo)
+        
+        # 自动刷新设置
+        auto_refresh_check = QCheckBox("启用")
+        form_layout.addRow("自动刷新:", auto_refresh_check)
+        
+        layout.addLayout(form_layout)
+        
+        # 添加按钮
+        button_layout = QHBoxLayout()
+        cancel_button = QPushButton("取消")
+        cancel_button.clicked.connect(dialog.reject)
+        
+        save_button = QPushButton("保存")
+        save_button.clicked.connect(dialog.accept)
+        
+        button_layout.addStretch()
+        button_layout.addWidget(cancel_button)
+        button_layout.addWidget(save_button)
+        
+        layout.addLayout(button_layout)
+        
+        # 显示对话框
+        if dialog.exec() == QDialog.DialogCode.Accepted:
+            # 保存设置
+            self.settings.setValue("theme", theme_combo.currentText())
+            self.settings.setValue("font_size", font_size_combo.currentText())
+            self.settings.setValue("auto_refresh", auto_refresh_check.isChecked())
+            
+            QMessageBox.information(self, "设置已保存", "系统设置已保存，部分设置可能需要重启应用后生效")
 
 if __name__ == "__main__":
     app = QApplication(sys.argv)

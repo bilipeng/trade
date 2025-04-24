@@ -8,6 +8,7 @@ from PyQt6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QPushButton, QLa
                            QLineEdit, QDateEdit, QFormLayout, QDialog, QMessageBox,
                            QSpinBox, QDoubleSpinBox, QTextEdit, QGroupBox, QTabWidget)
 from PyQt6.QtCore import Qt, pyqtSignal, QDate
+from views.business_view import BusinessEventDetailDialog
 
 class FinancialRecordView(QWidget):
     """财务记录管理视图"""
@@ -332,7 +333,16 @@ class FinancialRecordView(QWidget):
             
             if response.status_code == 200:
                 event_data = response.json()
-                dialog = BusinessEventViewDialog(event_data)
+                # 获取部门数据，因为BusinessEventDetailDialog需要这个参数
+                departments_response = requests.get(
+                    "http://localhost:8000/departments",
+                    headers={"Authorization": f"Bearer {self.token}"}
+                )
+                departments = []
+                if departments_response.status_code == 200:
+                    departments = departments_response.json()
+                
+                dialog = BusinessEventDetailDialog(event_data, departments)
                 dialog.exec()
             else:
                 QMessageBox.warning(self, "查询失败", "无法获取业务事件详情")
@@ -682,6 +692,12 @@ class FinancialRecordDialog(QDialog):
                     print(f"获取审批ID或更新状态错误: {str(e)}")
                     # 记录错误，但不影响主流程
                     pass
+                
+                # 刷新财务视图数据
+                main_window = self.window()
+                if main_window and hasattr(main_window, "finance_view") and hasattr(main_window.finance_view, "load_data"):
+                    main_window.finance_view.load_data()
+                    main_window.finance_view.load_business_events()  # 刷新待处理业务列表
                 
                 self.accept()
             else:

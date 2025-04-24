@@ -5,8 +5,8 @@ from PyQt6.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout,
                            QHBoxLayout, QPushButton, QLabel, QStackedWidget,
                            QMessageBox, QStatusBar, QToolBar, QSizePolicy, QFrame,
                            QTabWidget, QToolButton, QMenu, QSplitter, QDialog, QFormLayout,
-                           QComboBox, QCheckBox)
-from PyQt6.QtCore import Qt, QSettings, pyqtSignal, QSize
+                           QComboBox, QCheckBox, QSpinBox)
+from PyQt6.QtCore import Qt, QSettings, pyqtSignal, QSize, QTimer
 from PyQt6.QtGui import QIcon, QAction, QFont, QColor, QPalette, QPixmap
 
 # 导入其他模块
@@ -25,6 +25,10 @@ class MainWindow(QMainWindow):
         self.settings = QSettings("FinanceApp", "BizFinanceSystem")
         self.user_data = None
         self.token = None
+        
+        # 添加自动刷新定时器
+        self.refresh_timer = QTimer(self)
+        self.refresh_timer.timeout.connect(self.auto_refresh)
         
         # 检查是否已有token，如果有尝试自动登录
         token = self.settings.value("access_token", "")
@@ -70,6 +74,14 @@ class MainWindow(QMainWindow):
             
         # 初始化主界面
         self.init_ui()
+        
+        # 启动自动刷新定时器
+        auto_refresh_enabled = self.settings.value("auto_refresh", False, type=bool)
+        if auto_refresh_enabled:
+            refresh_interval = self.settings.value("refresh_interval", 60000, type=int)
+            self.refresh_timer.start(refresh_interval)
+            self.statusBar.showMessage(f"自动刷新已启用，间隔: {refresh_interval // 1000}秒", 2000)
+        
         self.show()
         
     def init_ui(self):
@@ -310,9 +322,19 @@ class MainWindow(QMainWindow):
         user_status = QLabel(f"用户: {self.user_data['username']} ({self.user_data['role']})")
         user_status.setObjectName("status_user")
         
+        # 添加自动刷新状态
+        auto_refresh_enabled = self.settings.value("auto_refresh", False, type=bool)
+        if auto_refresh_enabled:
+            refresh_interval = self.settings.value("refresh_interval", 60000, type=int)
+            refresh_status = QLabel(f"自动刷新: 已启用 ({refresh_interval // 1000}秒)")
+        else:
+            refresh_status = QLabel("自动刷新: 已禁用")
+        refresh_status.setObjectName("status_refresh")
+        
         # 添加到状态栏
         self.statusBar.addWidget(system_status)
         self.statusBar.addWidget(server_status)
+        self.statusBar.addWidget(refresh_status)
         self.statusBar.addPermanentWidget(user_status)  # 永久显示在右侧
         
         # 连接选项卡切换信号
@@ -396,6 +418,9 @@ class MainWindow(QMainWindow):
         )
         
         if reply == QMessageBox.StandardButton.Yes:
+            # 停止自动刷新定时器
+            self.refresh_timer.stop()
+            
             # 清除token
             self.settings.remove("access_token")
             
@@ -567,17 +592,29 @@ class MainWindow(QMainWindow):
         # 主题设置
         theme_combo = QComboBox()
         theme_combo.addItems(["默认主题", "暗色主题", "浅色主题"])
+        current_theme = self.settings.value("theme", "默认主题")
+        theme_combo.setCurrentText(current_theme)
         form_layout.addRow("界面主题:", theme_combo)
         
         # 字体大小设置
         font_size_combo = QComboBox()
         font_size_combo.addItems(["小", "中", "大"])
-        font_size_combo.setCurrentIndex(1)  # 默认选中"中"
+        current_font_size = self.settings.value("font_size", "中")
+        font_size_combo.setCurrentText(current_font_size)
         form_layout.addRow("字体大小:", font_size_combo)
         
         # 自动刷新设置
         auto_refresh_check = QCheckBox("启用")
+        auto_refresh_check.setChecked(self.refresh_timer.isActive())
         form_layout.addRow("自动刷新:", auto_refresh_check)
+        
+        # 刷新间隔设置
+        refresh_interval_spin = QSpinBox()
+        refresh_interval_spin.setRange(10, 600)  # 10秒到10分钟
+        refresh_interval_spin.setSuffix(" 秒")
+        interval = self.settings.value("refresh_interval", 60000, type=int) // 1000
+        refresh_interval_spin.setValue(interval)
+        form_layout.addRow("刷新间隔:", refresh_interval_spin)
         
         layout.addLayout(form_layout)
         
@@ -600,9 +637,50 @@ class MainWindow(QMainWindow):
             # 保存设置
             self.settings.setValue("theme", theme_combo.currentText())
             self.settings.setValue("font_size", font_size_combo.currentText())
-            self.settings.setValue("auto_refresh", auto_refresh_check.isChecked())
+            
+            # 自动刷新设置
+            auto_refresh_enabled = auto_refresh_check.isChecked()
+            self.settings.setValue("auto_refresh", auto_refresh_enabled)
+            
+            # 保存刷新间隔并更新定时器
+            interval_ms = refresh_interval_spin.value() * 1000  # 转换为毫秒
+            self.settings.setValue("refresh_interval", interval_ms)
+            
+            if auto_refresh_enabled:
+                # 启动定时器
+                self.refresh_timer.setInterval(interval_ms)
+                self.refresh_timer.start()
+                self.statusBar.showMessage(f"自动刷新已启用，间隔: {refresh_interval_spin.value()}秒", 2000)
+                
+                # 更新状态栏的自动刷新状态
+                refresh_status = self.statusBar.findChild(QLabel, "status_refresh")
+                if refresh_status:
+                    refresh_status.setText(f"自动刷新: 已启用 ({refresh_interval_spin.value()}秒)")
+            else:
+                # 停止定时器
+                self.refresh_timer.stop()
+                self.statusBar.showMessage("自动刷新已禁用", 2000)
+                
+                # 更新状态栏的自动刷新状态
+                refresh_status = self.statusBar.findChild(QLabel, "status_refresh")
+                if refresh_status:
+                    refresh_status.setText("自动刷新: 已禁用")
             
             QMessageBox.information(self, "设置已保存", "系统设置已保存，部分设置可能需要重启应用后生效")
+
+    def auto_refresh(self):
+        """自动刷新当前视图"""
+        # 获取当前视图
+        current_widget = self.content_tabs.currentWidget()
+        
+        # 如果当前视图有load_data方法，调用它
+        if hasattr(current_widget, "load_data"):
+            try:
+                current_widget.load_data()
+                self.statusBar.showMessage("数据已自动刷新", 1000)
+            except Exception as e:
+                # 自动刷新出错时不显示错误对话框，只在状态栏显示错误信息
+                self.statusBar.showMessage(f"自动刷新失败: {str(e)}", 2000)
 
 if __name__ == "__main__":
     app = QApplication(sys.argv)

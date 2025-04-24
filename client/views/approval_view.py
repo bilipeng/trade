@@ -216,11 +216,12 @@ class ApprovalView(QWidget):
                     print(f"审批通过成功，返回结果: {result}")
                     QMessageBox.information(self, "操作成功", "审批已通过")
                     
+                    # 自动刷新数据
+                    self.load_data()
+                    
                     # 如果所有审批都已完成，显示创建财务记录的询问
                     if not result.get("next_approval", True):
                         self.prompt_create_finance_record(approval_id)
-                    
-                    self.refresh_data()
                 else:
                     error_message = response.text
                     try:
@@ -261,7 +262,9 @@ class ApprovalView(QWidget):
                 if response.status_code == 200:
                     print("审批拒绝成功")
                     QMessageBox.information(self, "操作成功", "审批已拒绝")
-                    self.refresh_data()
+                    
+                    # 自动刷新数据
+                    self.load_data()
                 else:
                     error_message = response.text
                     try:
@@ -299,12 +302,19 @@ class ApprovalView(QWidget):
     def display_business_detail(self, business_id):
         """在右侧面板显示业务事件详情"""
         try:
-            # 清空右侧面板
-            while self.right_layout.count():
-                item = self.right_layout.takeAt(0)
-                widget = item.widget()
-                if widget:
-                    widget.deleteLater()
+            # 清空右侧面板 - 改进的清空方法
+            def clear_layout(layout):
+                if layout is not None:
+                    while layout.count():
+                        item = layout.takeAt(0)
+                        widget = item.widget()
+                        if widget is not None:
+                            widget.deleteLater()
+                        else:
+                            # 如果是布局，递归清除
+                            clear_layout(item.layout())
+
+            clear_layout(self.right_layout)
             
             # 获取业务事件详细信息
             response = requests.get(

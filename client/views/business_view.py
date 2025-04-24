@@ -331,14 +331,15 @@ class BusinessEventView(QWidget):
             print(f"响应内容: {response.text}")
             
             if response.status_code == 200:
+                # 自动刷新当前视图数据
+                self.load_data()
+                
                 reply = QMessageBox.question(
                     self, "提交成功", 
                     "业务事件已成功提交到审批流程，是否立即跳转到审批管理界面？",
                     QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
                     QMessageBox.StandardButton.Yes
                 )
-                
-                self.load_data()  # 刷新数据
                 
                 if reply == QMessageBox.StandardButton.Yes:
                     # 发出信号，让主窗口切换到审批管理界面
@@ -348,6 +349,9 @@ class BusinessEventView(QWidget):
                     main_window = self.window()
                     if main_window and hasattr(main_window, "switch_to_approval_view"):
                         main_window.switch_to_approval_view(None)  # 切换到审批管理界面
+                        # 刷新审批视图数据
+                        if hasattr(main_window.approval_view, "load_data"):
+                            main_window.approval_view.load_data()
                     else:
                         QMessageBox.information(self, "提示", "请手动切换到审批管理界面并刷新数据")
             else:

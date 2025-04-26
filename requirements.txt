@@ -1,0 +1,28 @@
+# 基础数据处理库
+numpy==1.24.3
+pandas==1.5.3
+
+# 数据库连接
+SQLAlchemy==2.0.23
+pymysql==1.1.0
+
+# Web框架
+Flask==2.3.3
+Flask-SQLAlchemy==3.1.1
+Flask-Cors==4.0.0
+
+# 工具库
+python-dotenv==1.0.0
+requests==2.31.0
+
+# 时间处理
+pytz==2023.3.post1
+python-dateutil==2.8.2
+
+# GUI库
+PyQt6==6.5.0
+PyQt6-Qt6==6.5.0
+PyQt6-sip==13.5.0
+
+# 数据可视化
+matplotlib==3.7.1 

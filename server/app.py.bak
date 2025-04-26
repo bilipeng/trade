@@ -1,0 +1,113 @@
+from flask import Flask, jsonify, request, g
+from flask_cors import CORS
+from api_endpoints import api
+import sqlite3
+import os
+from functools import wraps
+import jwt
+from datetime import datetime, timedelta
+from .auth import init_auth_db
+from .auth_endpoints import auth_bp, token_required
+from .auth_api import auth_bp as auth_bp_api
+
+app = Flask(__name__)
+CORS(app)
+
+# 配置
+app.config['SECRET_KEY'] = 'your-secret-key'  # 在生产环境中应该使用环境变量
+app.config['TOKEN_EXPIRE_HOURS'] = 24
+
+# 认证装饰器
+def token_required(f):
+    @wraps(f)
+    def decorated(*args, **kwargs):
+        token = None
+        if 'Authorization' in request.headers:
+            auth_header = request.headers['Authorization']
+            try:
+                token = auth_header.split(" ")[1]
+            except IndexError:
+                return jsonify({'message': '无效的认证令牌格式'}), 401
+        
+        if not token:
+            return jsonify({'message': '缺少认证令牌'}), 401
+
+        try:
+            data = jwt.decode(token, app.config['SECRET_KEY'], algorithms=["HS256"])
+            g.current_user = data
+        except jwt.ExpiredSignatureError:
+            return jsonify({'message': '认证令牌已过期'}), 401
+        except jwt.InvalidTokenError:
+            return jsonify({'message': '无效的认证令牌'}), 401
+
+        return f(*args, **kwargs)
+    return decorated
+
+# 登录路由
+@app.route('/login', methods=['POST'])
+def login():
+    auth = request.authorization
+    if not auth or not auth.username or not auth.password:
+        return jsonify({'message': '缺少认证信息'}), 401
+    
+    # 这里应该查询数据库验证用户，这里简化处理
+    if auth.username == "admin" and auth.password == "password":
+        token = jwt.encode({
+            'user': auth.username,
+            'exp': datetime.utcnow() + timedelta(hours=app.config['TOKEN_EXPIRE_HOURS'])
+        }, app.config['SECRET_KEY'])
+        
+        return jsonify({
+            'token': token,
+            'expires_in': app.config['TOKEN_EXPIRE_HOURS'] * 3600
+        })
+    
+    return jsonify({'message': '认证失败'}), 401
+
+# 注册蓝图并应用认证中间件
+app.register_blueprint(api, url_prefix='/api')
+
+# 注册认证蓝图
+app.register_blueprint(auth_bp_api, url_prefix='/api/auth')
+
+# 初始化认证数据库
+init_auth_db()
+
+# 示例受保护的API端点
+@app.route('/api/protected', methods=['GET'])
+@token_required
+def protected():
+    return jsonify({'message': '这是一个受保护的API端点'})
+
+# 数据库连接
+def get_db():
+    if 'db' not in g:
+        g.db = sqlite3.connect(
+            os.path.join(os.path.dirname(__file__), 'database', 'app.db'),
+            detect_types=sqlite3.PARSE_DECLTYPES
+        )
+        g.db.row_factory = sqlite3.Row
+    return g.db
+
+@app.teardown_appcontext
+def close_db(e=None):
+    db = g.pop('db', None)
+    if db is not None:
+        db.close()
+
+# 错误处理
+@app.errorhandler(404)
+def not_found(error):
+    return jsonify({'error': 'Not found'}), 404
+
+@app.errorhandler(500)
+def internal_error(error):
+    return jsonify({'error': 'Internal server error'}), 500
+
+# 健康检查
+@app.route('/health')
+def health_check():
+    return jsonify({'status': 'ok'})
+
+if __name__ == '__main__':
+    app.run(host='0.0.0.0', port=8000, debug=True)

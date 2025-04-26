@@ -14,6 +14,7 @@ from views.business_view import BusinessEventView
 from views.finance_view import FinancialRecordView
 from views.approval_view import ApprovalView
 from views.budget_view import BudgetView
+from views.dashboard_view import DashboardView
 from login import LoginWindow
 
 class MainWindow(QMainWindow):
@@ -188,32 +189,31 @@ class MainWindow(QMainWindow):
         nav_layout.addWidget(nav_title)
         
         # 导航按钮
-        self.create_nav_button("业务管理", "📊", "查看和管理业务数据", nav_layout, 0)
+        self.create_nav_button("仪表板", "📈", "查看业务财务综合数据", nav_layout, 0)
+        self.create_nav_button("业务管理", "📊", "查看和管理业务数据", nav_layout, 1)
         
         # 根据角色显示导航项
         if self.user_data['role'] in ['管理员', '财务人员']:
-            self.create_nav_button("财务管理", "💰", "管理公司财务记录和报表", nav_layout, 1)
+            self.create_nav_button("财务管理", "💰", "管理公司财务记录和报表", nav_layout, 2)
             
         if self.user_data['role'] in ['管理员', '业务人员', '部门主管']:
-            self.create_nav_button("审批管理", "✓", "处理待审批的业务和财务请求", nav_layout, 2)
+            self.create_nav_button("审批管理", "✓", "处理待审批的业务和财务请求", nav_layout, 3)
             
         if self.user_data['role'] in ['管理员', '财务人员']:
-            self.create_nav_button("预算管理", "📈", "监控和管理部门预算", nav_layout, 3)
+            self.create_nav_button("预算管理", "📈", "监控和管理部门预算", nav_layout, 4)
             
         # 添加占位空间
         nav_layout.addStretch()
         
         # 添加设置按钮
-        settings_btn = QPushButton("⚙ 系统设置")
+        settings_btn = QPushButton("⚙ 设置")
         settings_btn.setObjectName("settings_btn")
-        settings_btn.setToolTip("调整系统设置和个人偏好")
         settings_btn.clicked.connect(self.show_settings_dialog)
         nav_layout.addWidget(settings_btn)
         
         # 添加退出按钮
-        logout_btn = QPushButton("🚪 退出登录")
+        logout_btn = QPushButton("🚪 退出系统")
         logout_btn.setObjectName("logout_btn")
-        logout_btn.setToolTip("退出当前账号并返回登录界面")
         logout_btn.clicked.connect(self.logout)
         nav_layout.addWidget(logout_btn)
         
@@ -223,125 +223,68 @@ class MainWindow(QMainWindow):
         copyright_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         nav_layout.addWidget(copyright_label)
         
-        # 添加导航栏到分割器
+        # 将导航栏添加到分割器
         self.main_splitter.addWidget(self.nav_widget)
         
         # 创建内容区域
-        content_container = QWidget()
-        content_container.setObjectName("content_container")
-        content_layout = QVBoxLayout(content_container)
+        self.content_container = QWidget()
+        self.content_container.setObjectName("content_container")
+        content_layout = QVBoxLayout(self.content_container)
         content_layout.setContentsMargins(0, 0, 0, 0)
         content_layout.setSpacing(0)
         
-        # 添加内容标题栏
-        self.header_widget = QWidget()
-        self.header_widget.setObjectName("header_widget")
-        self.header_widget.setFixedHeight(70)
-        
-        header_layout = QHBoxLayout(self.header_widget)
+        # 添加头部区域
+        header_widget = QWidget()
+        header_widget.setObjectName("header_widget")
+        header_layout = QHBoxLayout(header_widget)
         header_layout.setContentsMargins(20, 0, 20, 0)
         
-        self.header_title = QLabel("业务管理")
-        self.header_title.setObjectName("header_title")
-        header_layout.addWidget(self.header_title)
+        self.current_page_title = QLabel("仪表板")
+        self.current_page_title.setObjectName("header_title")
+        header_layout.addWidget(self.current_page_title)
         
         # 添加右侧用户信息和快捷操作
-        header_layout.addStretch()
-        
-        # 添加快捷操作工具栏
-        quick_actions = QToolBar()
+        quick_actions = QToolBar("快捷操作")
         quick_actions.setObjectName("quick_actions")
         quick_actions.setIconSize(QSize(24, 24))
         
-        # 添加刷新按钮
-        refresh_action = QAction("🔄 刷新", self)
-        refresh_action.setToolTip("刷新当前视图数据")
+        # 添加刷新操作
+        if os.path.exists("ui/assets/refresh.png"):
+            refresh_icon = QIcon("ui/assets/refresh.png")
+        else:
+            refresh_icon = QIcon()  # 创建空图标
+        refresh_action = QAction(refresh_icon, "刷新数据", self)
         refresh_action.triggered.connect(self.refresh_current_view)
         quick_actions.addAction(refresh_action)
         
-        # 添加帮助按钮
-        help_action = QAction("❓ 帮助", self) 
-        help_action.setToolTip("获取功能帮助")
+        # 添加帮助操作
+        if os.path.exists("ui/assets/help.png"):
+            help_icon = QIcon("ui/assets/help.png")
+        else:
+            help_icon = QIcon()  # 创建空图标
+        help_action = QAction(help_icon, "帮助", self)
         help_action.triggered.connect(self.show_help)
         quick_actions.addAction(help_action)
         
-        # 添加通知按钮
-        notif_btn = QToolButton()
-        notif_btn.setText("🔔")
-        notif_btn.setToolTip("查看通知")
-        notif_btn.setObjectName("notif_btn")
-        quick_actions.addWidget(notif_btn)
-        
         header_layout.addWidget(quick_actions)
-        content_layout.addWidget(self.header_widget)
+        content_layout.addWidget(header_widget)
         
-        # 创建选项卡式内容区域
-        self.content_tabs = QTabWidget()
-        self.content_tabs.setObjectName("content_tabs")
-        self.content_tabs.setTabsClosable(False)
-        self.content_tabs.setMovable(True)
-        self.content_tabs.setDocumentMode(True)
+        # 初始化页面内容
+        self.init_pages()
         
-        # 添加内容页面到选项卡
-        self.business_view = BusinessEventView(self.token, self.user_data)
-        self.content_tabs.addTab(self.business_view, "业务数据")
-        
-        if self.user_data['role'] in ['管理员', '财务人员']:
-            self.finance_view = FinancialRecordView(self.token, self.user_data)
-            self.content_tabs.addTab(self.finance_view, "财务记录")
-        
-        if self.user_data['role'] in ['管理员', '业务人员', '部门主管']:
-            self.approval_view = ApprovalView(self.token, self.user_data)
-            self.content_tabs.addTab(self.approval_view, "审批流程")
-        
-        if self.user_data['role'] in ['管理员', '财务人员']:
-            self.budget_view = BudgetView(self.token, self.user_data)
-            self.content_tabs.addTab(self.budget_view, "预算分析")
-        
-        # 添加选项卡区域到布局
-        content_layout.addWidget(self.content_tabs)
-        
-        # 添加内容区域到分割器
-        self.main_splitter.addWidget(content_container)
+        # 将内容区域添加到分割器
+        self.main_splitter.addWidget(self.content_container)
         
         # 设置分割器比例
-        self.main_splitter.setSizes([260, 1020])
-        self.main_splitter.setCollapsible(0, False)  # 防止导航栏被完全折叠
+        self.main_splitter.setStretchFactor(0, 0)  # 导航区不伸展
+        self.main_splitter.setStretchFactor(1, 1)  # 内容区伸展
         
-        # 设置状态栏
+        # 添加状态栏
         self.statusBar = QStatusBar()
         self.setStatusBar(self.statusBar)
         
-        # 添加系统状态指示
-        system_status = QLabel("系统就绪")
-        system_status.setObjectName("status_system")
-        
-        server_status = QLabel("服务器: 已连接")
-        server_status.setObjectName("status_server")
-        
-        user_status = QLabel(f"用户: {self.user_data['username']} ({self.user_data['role']})")
-        user_status.setObjectName("status_user")
-        
-        # 添加自动刷新状态
-        auto_refresh_enabled = self.settings.value("auto_refresh", False, type=bool)
-        if auto_refresh_enabled:
-            refresh_interval = self.settings.value("refresh_interval", 60000, type=int)
-            refresh_status = QLabel(f"自动刷新: 已启用 ({refresh_interval // 1000}秒)")
-        else:
-            refresh_status = QLabel("自动刷新: 已禁用")
-        refresh_status.setObjectName("status_refresh")
-        
-        # 添加到状态栏
-        self.statusBar.addWidget(system_status)
-        self.statusBar.addWidget(server_status)
-        self.statusBar.addWidget(refresh_status)
-        self.statusBar.addPermanentWidget(user_status)  # 永久显示在右侧
-        
-        # 连接选项卡切换信号
-        self.content_tabs.currentChanged.connect(self.on_tab_changed)
-        
-        # 默认显示业务管理视图
-        self.content_tabs.setCurrentIndex(0)
+        # 显示系统就绪信息
+        self.statusBar.showMessage("系统就绪", 5000)
     
     def create_nav_button(self, text, icon, tooltip, layout, index):
         """创建导航按钮"""
@@ -362,50 +305,33 @@ class MainWindow(QMainWindow):
         return button
     
     def change_page(self, index, button, title):
-        """改变页面显示"""
-        # 取消选中其他按钮
-        for child in self.nav_widget.findChildren(QPushButton):
-            if child.property("class") == "NavButton" and child != button:
-                child.setChecked(False)
+        """切换页面"""
+        # 清除所有导航按钮的选中状态
+        for i in range(5):  # 最多5个导航按钮
+            nav_btn_name = f"nav_btn_{i}"
+            nav_button = self.findChild(QPushButton, nav_btn_name)
+            if nav_button:
+                nav_button.setProperty("active", False)
+                nav_button.setStyleSheet("")  # 触发样式重新应用
         
         # 设置当前按钮为选中状态
-        button.setChecked(True)
+        button.setProperty("active", True)
+        button.setStyleSheet("")  # 触发样式重新应用
         
-        # 更新头部标题
-        self.header_title.setText(title)
+        # 切换到对应页面
+        if title == "仪表板":
+            self.content_pages.setCurrentWidget(self.dashboard_view)
+        elif title == "业务管理":
+            self.content_pages.setCurrentWidget(self.business_view)
+        elif title == "财务管理":
+            self.content_pages.setCurrentWidget(self.finance_view)
+        elif title == "审批管理":
+            self.content_pages.setCurrentWidget(self.approval_view)
+        elif title == "预算管理":
+            self.content_pages.setCurrentWidget(self.budget_view)
         
-        # 切换到相应的选项卡
-        if index == 0:
-            self.content_tabs.setCurrentWidget(self.business_view)
-        elif index == 1 and hasattr(self, 'finance_view'):
-            self.content_tabs.setCurrentWidget(self.finance_view)
-        elif index == 2 and hasattr(self, 'approval_view'):
-            self.content_tabs.setCurrentWidget(self.approval_view)
-        elif index == 3 and hasattr(self, 'budget_view'):
-            self.content_tabs.setCurrentWidget(self.budget_view)
-    
-    def on_tab_changed(self, index):
-        """处理选项卡切换事件"""
-        # 获取当前选项卡的标题
-        tab_title = self.content_tabs.tabText(index)
-        
-        # 找到对应的导航按钮并选中
-        if tab_title == "业务数据":
-            nav_button = self.findChild(QPushButton, "nav_业务管理")
-            if nav_button:
-                self.change_page(0, nav_button, "业务管理")
-        elif tab_title == "财务记录":
-            nav_button = self.findChild(QPushButton, "nav_财务管理")
-            if nav_button:
-                self.change_page(1, nav_button, "财务管理")
-        elif tab_title == "审批流程":
-            nav_button = self.findChild(QPushButton, "nav_审批管理")
-            if nav_button:
-                self.change_page(2, nav_button, "审批管理")
-        elif tab_title == "预算分析":
-            nav_button = self.findChild(QPushButton, "nav_预算管理")
-            if nav_button:
-                self.change_page(3, nav_button, "预算管理")
+        # 更新当前页面标题
+        self.current_page_title.setText(title)
     
     def logout(self):
         """退出登录"""
@@ -448,60 +374,48 @@ class MainWindow(QMainWindow):
             event.accept()
 
     def refresh_current_view(self):
-        """刷新当前视图的数据"""
-        current_widget = self.content_tabs.currentWidget()
-        
-        if hasattr(current_widget, "load_data"):
+        """刷新当前视图数据"""
+        current_widget = self.content_pages.currentWidget()
+        if hasattr(current_widget, 'load_data'):
             try:
-                # 显示刷新中的状态
-                self.statusBar.showMessage("正在刷新数据...", 2000)
-                
-                # 调用当前视图的load_data方法
                 current_widget.load_data()
-                
-                # 更新状态栏
-                self.statusBar.showMessage("数据刷新成功", 2000)
+                self.statusBar.showMessage("数据已刷新", 2000)
             except Exception as e:
-                self.statusBar.showMessage(f"刷新失败: {str(e)}", 3000)
                 QMessageBox.warning(self, "刷新失败", f"刷新数据时发生错误: {str(e)}")
-        else:
-            self.statusBar.showMessage("当前视图不支持刷新", 2000)
+
+    def switch_to_dashboard_view(self):
+        """切换到仪表板视图"""
+        nav_button = self.findChild(QPushButton, "nav_btn_0")
+        if nav_button:
+            self.change_page(0, nav_button, "仪表板")
 
     def switch_to_business_view(self):
         """切换到业务管理视图"""
-        if hasattr(self, "business_view"):
-            self.content_tabs.setCurrentWidget(self.business_view)
-            nav_button = self.findChild(QPushButton, "nav_业务管理")
-            if nav_button:
-                self.change_page(0, nav_button, "业务管理")
+        nav_button = self.findChild(QPushButton, "nav_btn_1")
+        if nav_button:
+            self.change_page(1, nav_button, "业务管理")
 
     def switch_to_finance_view(self):
         """切换到财务管理视图"""
-        if hasattr(self, "finance_view"):
-            self.content_tabs.setCurrentWidget(self.finance_view)
-            nav_button = self.findChild(QPushButton, "nav_财务管理")
-            if nav_button:
-                self.change_page(1, nav_button, "财务管理")
+        nav_button = self.findChild(QPushButton, "nav_btn_2")
+        if nav_button:
+            self.change_page(2, nav_button, "财务管理")
 
     def switch_to_approval_view(self, approval_id=None):
         """切换到审批管理视图"""
-        if hasattr(self, "approval_view"):
-            self.content_tabs.setCurrentWidget(self.approval_view)
-            nav_button = self.findChild(QPushButton, "nav_审批管理")
-            if nav_button:
-                self.change_page(2, nav_button, "审批管理")
+        nav_button = self.findChild(QPushButton, "nav_btn_3")
+        if nav_button:
+            self.change_page(3, nav_button, "审批管理")
             
-            # 如果提供了审批ID，高亮显示对应的审批记录
-            if approval_id and hasattr(self.approval_view, "highlight_approval"):
-                self.approval_view.highlight_approval(approval_id)
+        # 如果提供了审批ID，高亮显示对应的审批记录
+        if approval_id and hasattr(self.approval_view, "highlight_approval"):
+            self.approval_view.highlight_approval(approval_id)
 
     def switch_to_budget_view(self):
         """切换到预算管理视图"""
-        if hasattr(self, "budget_view"):
-            self.content_tabs.setCurrentWidget(self.budget_view)
-            nav_button = self.findChild(QPushButton, "nav_预算管理")
-            if nav_button:
-                self.change_page(3, nav_button, "预算管理")
+        nav_button = self.findChild(QPushButton, "nav_btn_4")
+        if nav_button:
+            self.change_page(4, nav_button, "预算管理")
 
     def show_help(self):
         """显示帮助信息"""
@@ -681,6 +595,36 @@ class MainWindow(QMainWindow):
             except Exception as e:
                 # 自动刷新出错时不显示错误对话框，只在状态栏显示错误信息
                 self.statusBar.showMessage(f"自动刷新失败: {str(e)}", 2000)
+
+    def init_pages(self):
+        """初始化内容页面"""
+        # 创建堆叠窗口Widget用于管理不同的页面
+        self.content_pages = QStackedWidget()
+        self.main_splitter.addWidget(self.content_pages)
+        
+        # 仪表板页面
+        self.dashboard_view = DashboardView(self.token, self.user_data)
+        self.content_pages.addWidget(self.dashboard_view)
+        
+        # 业务管理页面
+        self.business_view = BusinessEventView(self.token, self.user_data)
+        self.content_pages.addWidget(self.business_view)
+        
+        # 财务管理页面
+        self.finance_view = FinancialRecordView(self.token, self.user_data)
+        self.content_pages.addWidget(self.finance_view)
+        
+        # 审批管理页面
+        self.approval_view = ApprovalView(self.token, self.user_data)
+        self.content_pages.addWidget(self.approval_view)
+        
+        # 预算管理页面
+        self.budget_view = BudgetView(self.token, self.user_data)
+        self.content_pages.addWidget(self.budget_view)
+        
+        # 默认显示仪表板
+        self.content_pages.setCurrentIndex(0)
+        self.current_page_title.setText("仪表板")
 
 if __name__ == "__main__":
     app = QApplication(sys.argv)

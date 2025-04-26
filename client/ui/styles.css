@@ -878,4 +878,120 @@ QSplitter::handle:pressed {
 #status_user {
     border-left: 1px solid rgba(255,255,255,0.3);
     font-weight: bold;
+}
+
+/* 仪表板相关样式 */
+.kpi-card {
+    background-color: var(--color-card-bg);
+    border-radius: var(--border-radius);
+    box-shadow: var(--box-shadow);
+    padding: var(--spacing-md);
+    margin: var(--spacing-sm);
+}
+
+.kpi-title {
+    font-size: 14px;
+    color: var(--color-text-secondary);
+    margin-bottom: var(--spacing-sm);
+}
+
+.kpi-value {
+    font-size: 28px;
+    font-weight: bold;
+    color: var(--color-primary);
+    margin: var(--spacing-sm) 0;
+}
+
+.kpi-subtitle {
+    font-size: 13px;
+    color: var(--color-text-secondary);
+}
+
+#dashboard_separator {
+    background-color: var(--color-background);
+    height: 2px;
+    margin: var(--spacing-md) 0;
+    opacity: 0.6;
+}
+
+QChartView {
+    background-color: var(--color-card-bg);
+    border-radius: var(--border-radius);
+    box-shadow: var(--box-shadow);
+}
+
+QGroupBox {
+    background-color: var(--color-card-bg);
+    border-radius: var(--border-radius);
+    box-shadow: var(--box-shadow);
+    margin-top: 20px;
+    padding-top: 20px;
+    font-weight: bold;
+}
+
+QGroupBox::title {
+    subcontrol-origin: margin;
+    subcontrol-position: top center;
+    padding: 0 8px;
+    background-color: var(--color-card-bg);
+    color: var(--color-primary);
+}
+
+QTabWidget#recent_tabs {
+    background-color: var(--color-card-bg);
+    border-radius: var(--border-radius);
+    box-shadow: var(--box-shadow);
+}
+
+QTabWidget#recent_tabs::pane {
+    border: 1px solid var(--color-background);
+    border-radius: var(--border-radius);
+    top: -1px;
+}
+
+/* 状态样式 */
+.status-new {
+    background-color: rgba(25, 118, 210, 0.2);
+    color: var(--color-primary);
+    border-radius: 12px;
+    font-weight: bold;
+    padding: 3px 8px;
+}
+
+.status-processing {
+    background-color: rgba(255, 179, 0, 0.2);
+    color: var(--color-warning);
+    border-radius: 12px;
+    font-weight: bold;
+    padding: 3px 8px;
+}
+
+.status-completed {
+    background-color: rgba(67, 160, 71, 0.2);
+    color: var(--color-success);
+    border-radius: 12px;
+    font-weight: bold;
+    padding: 3px 8px;
+}
+
+.status-recorded {
+    background-color: rgba(0, 137, 123, 0.2);
+    color: var(--color-secondary);
+    border-radius: 12px;
+    font-weight: bold;
+    padding: 3px 8px;
+}
+
+/* 链接按钮样式 */
+.link-button {
+    background: none;
+    color: var(--color-primary);
+    border: none;
+    text-decoration: underline;
+    padding: 2px 4px;
+}
+
+.link-button:hover {
+    color: var(--color-primary-dark);
+    background-color: rgba(25, 118, 210, 0.1);
 } 

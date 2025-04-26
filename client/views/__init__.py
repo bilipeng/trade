@@ -2,4 +2,5 @@
 from .business_view import BusinessEventView
 from .finance_view import FinancialRecordView
 from .approval_view import ApprovalView
-from .budget_view import BudgetView 
+from .budget_view import BudgetView
+from .dashboard_view import DashboardView 

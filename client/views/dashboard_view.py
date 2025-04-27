@@ -3,18 +3,43 @@ import os
 import json
 import requests
 import pandas as pd
+import random
 from datetime import datetime, timedelta
 import matplotlib
 matplotlib.use('QtAgg')
 import matplotlib.pyplot as plt
+import matplotlib.font_manager as fm
+from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
 from matplotlib.figure import Figure
 import numpy as np
+import sqlite3  # 添加数据库支持
+
+# 设置matplotlib中文支持
+try:
+    # 尝试设置中文字体
+    plt.rcParams['font.sans-serif'] = ['SimHei', 'Microsoft YaHei', 'SimSun', 'Arial Unicode MS']
+    plt.rcParams['axes.unicode_minus'] = False  # 解决负号显示问题
+    
+    # 验证字体是否可用
+    import matplotlib as mpl
+    mpl.font_manager._rebuild()
+except Exception as e:
+    print(f"设置中文字体失败: {str(e)}")
+    # 查找系统中可用的中文字体
+    chinese_fonts = []
+    for f in fm.fontManager.ttflist:
+        if 'chinese' in f.name.lower() or '黑体' in f.name or '宋体' in f.name or '微软雅黑' in f.name:
+            chinese_fonts.append(f.name)
+    
+    if chinese_fonts:
+        plt.rcParams['font.sans-serif'] = [chinese_fonts[0]] + plt.rcParams['font.sans-serif']
+        print(f"已使用可用的中文字体: {chinese_fonts[0]}")
 
 from PyQt6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QPushButton, QLabel,
                            QTableWidget, QTableWidgetItem, QHeaderView, QComboBox,
                            QLineEdit, QDateEdit, QFormLayout, QDialog, QMessageBox,
                            QSpinBox, QDoubleSpinBox, QTextEdit, QGroupBox, QProgressBar,
-                           QFrame, QSplitter, QTabWidget, QScrollArea)
+                           QFrame, QSplitter, QTabWidget, QScrollArea, QGridLayout)
 from PyQt6.QtCore import Qt, pyqtSignal, QDate, QSize
 from PyQt6.QtGui import QPainter, QPen, QColor, QFont
 
@@ -30,6 +55,11 @@ class DashboardView(QWidget):
         self.finance_data = []
         self.approval_data = []
         self.budget_data = []
+        
+        # 数据库配置 - 修正数据库路径
+        self.db_path = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), "database", "finance.db")
+        print(f"数据库路径: {self.db_path}")
+        
         self.init_ui()
         self.load_data()
 
@@ -49,6 +79,7 @@ class DashboardView(QWidget):
 
         # 时间范围选择
         self.period_combo = QComboBox()
+        self.period_combo.addItem("全部数据", "all")
         self.period_combo.addItem("本周", "week")
         self.period_combo.addItem("本月", "month")
         self.period_combo.addItem("本季度", "quarter")
@@ -74,11 +105,26 @@ class DashboardView(QWidget):
         main_layout.addWidget(scroll_area)
 
         # 添加关键数据指标卡片
-        kpi_layout = QHBoxLayout()
-        self.create_kpi_card("业务事件总数", "0", "今日新增: 0", kpi_layout)
-        self.create_kpi_card("财务记录总数", "0", "本月: 0", kpi_layout)
-        self.create_kpi_card("待审批事项", "0", "已处理: 0", kpi_layout)
-        self.create_kpi_card("预算执行率", "0%", "剩余预算: ¥0", kpi_layout)
+        kpi_layout = QGridLayout()
+        kpi_layout.setContentsMargins(0, 0, 0, 0)
+        kpi_layout.setSpacing(15)
+
+        # 业务KPI
+        self.business_card = self.create_kpi_card("业务事件总数", "0", "今日: 0")
+        kpi_layout.addWidget(self.business_card, 0, 0)
+
+        # 财务KPI
+        self.finance_card = self.create_kpi_card("财务记录总数", "0", "本月: 0")
+        kpi_layout.addWidget(self.finance_card, 0, 1)
+
+        # 审批KPI
+        self.approval_card = self.create_kpi_card("待审批事项", "0", "已处理: 0")
+        kpi_layout.addWidget(self.approval_card, 1, 0)
+
+        # 预算KPI
+        self.budget_card = self.create_kpi_card("预算执行率", "0%", "总预算: ¥0")
+        kpi_layout.addWidget(self.budget_card, 1, 1)
+
         scroll_layout.addLayout(kpi_layout)
 
         # 添加分隔线
@@ -91,8 +137,8 @@ class DashboardView(QWidget):
         self.fig, (self.ax1, self.ax2) = plt.subplots(2, 1, figsize=(10, 8))
         
         # 设置图表标题
-        self.ax1.set_title("Business Types")
-        self.ax2.set_title("Finance Trends")
+        self.ax1.set_title("业务类型分布")
+        self.ax2.set_title("财务收支趋势")
         
         # 调整布局
         self.fig.tight_layout()
@@ -103,40 +149,9 @@ class DashboardView(QWidget):
 
         scroll_layout.addLayout(charts_layout)
         
-        # 添加分隔线
-        scroll_layout.addWidget(self.create_separator())
+        # 这里不再添加表格相关代码
 
-        # 最近事件表格
-        recent_tabs = QTabWidget()
-        
-        # 最近业务事件
-        self.recent_business_table = QTableWidget()
-        self.recent_business_table.setColumnCount(5)
-        self.recent_business_table.setHorizontalHeaderLabels(["项目名称", "类型", "金额", "日期", "状态"])
-        self.recent_business_table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
-        self.recent_business_table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
-        recent_tabs.addTab(self.recent_business_table, "最近业务事件")
-        
-        # 最近财务记录
-        self.recent_finance_table = QTableWidget()
-        self.recent_finance_table.setColumnCount(5)
-        self.recent_finance_table.setHorizontalHeaderLabels(["记录类型", "科目", "金额", "日期", "状态"])
-        self.recent_finance_table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
-        self.recent_finance_table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
-        recent_tabs.addTab(self.recent_finance_table, "最近财务记录")
-        
-        # 待处理审批
-        self.pending_approval_table = QTableWidget()
-        self.pending_approval_table.setColumnCount(5)
-        self.pending_approval_table.setHorizontalHeaderLabels(["申请人", "类型", "日期", "状态", "操作"])
-        self.pending_approval_table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
-        self.pending_approval_table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
-        recent_tabs.addTab(self.pending_approval_table, "待处理审批")
-        
-        recent_tabs.setMinimumHeight(200)
-        scroll_layout.addWidget(recent_tabs)
-
-    def create_kpi_card(self, title, value, subtitle, parent_layout):
+    def create_kpi_card(self, title, value, subtitle):
         """创建KPI指标卡片"""
         card = QFrame()
         card.setObjectName("kpi_card")
@@ -160,7 +175,6 @@ class DashboardView(QWidget):
         card_layout.addWidget(value_label)
         card_layout.addWidget(subtitle_label)
         
-        parent_layout.addWidget(card)
         return card
 
     def create_separator(self):
@@ -172,19 +186,132 @@ class DashboardView(QWidget):
         return separator
 
     def load_data(self):
-        """根据选择的时间范围加载数据"""
+        """加载所有数据"""
+        print("开始加载仪表板数据...")
+        
+        # 检查数据库连接
+        if not self.check_db_connection():
+            print("数据库连接失败，将使用API加载数据")
+        
+        # 加载业务事件数据
         self.load_business_data()
+        # 加载财务记录数据
         self.load_finance_data()
+        # 加载审批数据
         self.load_approval_data()
+        # 加载预算数据
         self.load_budget_data()
         
-        # 更新图表和表格
+        # 更新UI
+        self.update_kpi_cards()
         self.update_charts()
         self.update_tables()
-        self.update_kpi_cards()
+        
+        print("仪表板数据加载完成")
+
+    def check_db_connection(self):
+        """检查数据库连接状态"""
+        try:
+            # 检查数据库文件是否存在
+            if not os.path.exists(self.db_path):
+                print(f"数据库文件不存在: {self.db_path}")
+                return False
+                
+            # 尝试连接数据库
+            conn = sqlite3.connect(self.db_path)
+            cursor = conn.cursor()
+            
+            # 检查是否能够执行简单查询
+            cursor.execute("SELECT sqlite_version();")
+            version = cursor.fetchone()
+            print(f"SQLite版本: {version[0]}")
+            
+            # 检查关键表是否存在
+            tables = ["business_events", "financial_transactions", "approvals", "budgets"]
+            existing_tables = []
+            
+            for table in tables:
+                cursor.execute(f"SELECT name FROM sqlite_master WHERE type='table' AND name='{table}'")
+                if cursor.fetchone():
+                    existing_tables.append(table)
+            
+            conn.close()
+            
+            if existing_tables:
+                print(f"找到以下数据表: {', '.join(existing_tables)}")
+            else:
+                print("未找到任何所需的数据表")
+                
+            return len(existing_tables) > 0
+            
+        except Exception as e:
+            print(f"检查数据库连接时出错: {str(e)}")
+            import traceback
+            traceback.print_exc()
+            return False
 
     def load_business_data(self):
-        """加载业务事件数据"""
+        """从数据库加载业务事件数据"""
+        try:
+            # 尝试连接数据库
+            conn = sqlite3.connect(self.db_path)
+            conn.row_factory = sqlite3.Row  # 使结果可以通过列名访问
+            cursor = conn.cursor()
+            
+            # 检查表是否存在
+            cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='business_events'")
+            if cursor.fetchone() is None:
+                print("business_events表不存在，切换到API加载")
+                conn.close()
+                self.load_business_data_from_api()
+                return
+            
+            # 检查日期格式，获取样本数据
+            cursor.execute("SELECT event_date FROM business_events LIMIT 1")
+            sample_date = cursor.fetchone()
+            if sample_date:
+                print(f"样本日期格式: {sample_date[0]}")
+            
+            # 根据时间范围获取业务事件数据
+            period = self.period_combo.currentData()
+            date_condition = self.get_date_condition(period, "event_date")
+            
+            query = f"""
+                SELECT * FROM business_events 
+                WHERE {date_condition}
+                ORDER BY event_date DESC
+            """
+            print(f"执行SQL: {query}")
+            
+            cursor.execute(query)
+            
+            results = cursor.fetchall()
+            if not results:
+                print("查询结果为空，尝试不使用日期条件查询全部数据")
+                cursor.execute("SELECT * FROM business_events ORDER BY event_date DESC")
+                results = cursor.fetchall()
+            
+            self.business_data = [dict(row) for row in results]
+            
+            # 如果数据库查询结果为空，尝试从API获取
+            if not self.business_data:
+                print("数据库查询结果为空，尝试从API获取")
+                conn.close()
+                self.load_business_data_from_api()
+                return
+            
+            conn.close()
+            print(f"从数据库加载了 {len(self.business_data)} 条业务数据")
+            
+        except Exception as e:
+            print(f"从数据库加载业务数据时出错: {str(e)}")
+            import traceback
+            traceback.print_exc()
+            # 回退到API加载方式
+            self.load_business_data_from_api()
+
+    def load_business_data_from_api(self):
+        """从API加载业务事件数据（作为备用方案）"""
         try:
             response = requests.get(
                 "http://localhost:8000/business_events",
@@ -199,7 +326,61 @@ class DashboardView(QWidget):
             QMessageBox.warning(self, "错误", f"加载业务数据时发生错误: {str(e)}")
 
     def load_finance_data(self):
-        """加载财务记录数据"""
+        """从数据库加载财务记录数据"""
+        try:
+            # 尝试连接数据库
+            conn = sqlite3.connect(self.db_path)
+            conn.row_factory = sqlite3.Row
+            cursor = conn.cursor()
+            
+            # 检查表是否存在
+            cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='financial_transactions'")
+            if cursor.fetchone() is None:
+                print("financial_transactions表不存在，切换到API加载")
+                conn.close()
+                self.load_finance_data_from_api()
+                return
+            
+            # 根据时间范围获取财务数据
+            period = self.period_combo.currentData()
+            date_condition = self.get_date_condition(period, "transaction_date")
+            
+            query = f"""
+                SELECT * FROM financial_transactions
+                WHERE {date_condition}
+                ORDER BY transaction_date DESC
+            """
+            print(f"执行SQL: {query}")
+            
+            cursor.execute(query)
+            
+            results = cursor.fetchall()
+            if not results:
+                print("查询结果为空，尝试不使用日期条件查询全部数据")
+                cursor.execute("SELECT * FROM financial_transactions ORDER BY transaction_date DESC")
+                results = cursor.fetchall()
+            
+            self.finance_data = [dict(row) for row in results]
+            
+            # 如果数据库查询结果为空，尝试从API获取
+            if not self.finance_data:
+                print("数据库查询结果为空，尝试从API获取")
+                conn.close()
+                self.load_finance_data_from_api()
+                return
+            
+            conn.close()
+            print(f"从数据库加载了 {len(self.finance_data)} 条财务数据")
+            
+        except Exception as e:
+            print(f"从数据库加载财务数据时出错: {str(e)}")
+            import traceback
+            traceback.print_exc()
+            # 回退到API加载方式
+            self.load_finance_data_from_api()
+
+    def load_finance_data_from_api(self):
+        """从API加载财务记录数据（作为备用方案）"""
         try:
             response = requests.get(
                 "http://localhost:8000/financial_records",
@@ -214,7 +395,54 @@ class DashboardView(QWidget):
             QMessageBox.warning(self, "错误", f"加载财务数据时发生错误: {str(e)}")
 
     def load_approval_data(self):
-        """加载审批数据"""
+        """从数据库加载审批数据"""
+        try:
+            # 尝试连接数据库
+            conn = sqlite3.connect(self.db_path)
+            conn.row_factory = sqlite3.Row
+            cursor = conn.cursor()
+            
+            # 修改查询以匹配实际的表结构
+            cursor.execute("""
+                SELECT 
+                    a.id,
+                    a.business_event_id,
+                    a.approver_id,
+                    a.approval_level,
+                    a.status,
+                    a.comment,
+                    a.approval_date,
+                    a.created_at,
+                    a.updated_at,
+                    b.project_name,
+                    b.event_type,
+                    b.amount,
+                    u.username as approver_name
+                FROM approvals a
+                JOIN business_events b ON a.business_event_id = b.id
+                LEFT JOIN users u ON a.approver_id = u.id
+                ORDER BY a.created_at DESC
+            """)
+            
+            results = cursor.fetchall()
+            self.approval_data = [dict(row) for row in results]
+            
+            # 如果数据库查询结果为空，尝试从API获取
+            if not self.approval_data:
+                self.load_approval_data_from_api()
+            
+            conn.close()
+            print(f"从数据库加载了 {len(self.approval_data)} 条审批数据")
+            
+        except Exception as e:
+            print(f"从数据库加载审批数据时出错: {str(e)}")
+            import traceback
+            traceback.print_exc()
+            # 回退到API加载方式
+            self.load_approval_data_from_api()
+
+    def load_approval_data_from_api(self):
+        """从API加载审批数据（作为备用方案）"""
         try:
             response = requests.get(
                 "http://localhost:8000/approvals",
@@ -229,7 +457,49 @@ class DashboardView(QWidget):
             QMessageBox.warning(self, "错误", f"加载审批数据时发生错误: {str(e)}")
 
     def load_budget_data(self):
-        """加载预算数据"""
+        """从数据库加载预算数据"""
+        try:
+            # 尝试连接数据库
+            conn = sqlite3.connect(self.db_path)
+            conn.row_factory = sqlite3.Row
+            cursor = conn.cursor()
+            
+            # 检查预算表结构
+            cursor.execute("PRAGMA table_info(budgets)")
+            columns = cursor.fetchall()
+            print("预算表结构:")
+            for col in columns:
+                print(f"  - {col['name']}: {col['type']}")
+            
+            # 获取当前年份的预算数据，使用更简单的查询
+            current_year = datetime.now().year
+            
+            cursor.execute("""
+                SELECT *
+                FROM budgets
+                ORDER BY id
+            """)
+            
+            results = cursor.fetchall()
+            self.budget_data = [dict(row) for row in results]
+            
+            # 如果数据库查询结果为空，尝试从API获取
+            if not self.budget_data:
+                self.load_budget_data_from_api()
+            else:
+                print(f"从数据库加载了 {len(self.budget_data)} 条预算数据")
+            
+            conn.close()
+            
+        except Exception as e:
+            print(f"从数据库加载预算数据时出错: {str(e)}")
+            import traceback
+            traceback.print_exc()
+            # 回退到API加载方式
+            self.load_budget_data_from_api()
+
+    def load_budget_data_from_api(self):
+        """从API加载预算数据（作为备用方案）"""
         try:
             response = requests.get(
                 "http://localhost:8000/budgets",
@@ -243,57 +513,96 @@ class DashboardView(QWidget):
         except Exception as e:
             QMessageBox.warning(self, "错误", f"加载预算数据时发生错误: {str(e)}")
 
+    def get_date_condition(self, period, date_field):
+        """根据选择的时间范围生成SQL日期条件"""
+        now = datetime.now()
+        
+        if period == "all":
+            # 全部数据
+            return "1=1"  # 始终为真的条件
+        elif period == "week":
+            # 本周（从周一开始）
+            start_date = (now - timedelta(days=now.weekday())).strftime("%Y-%m-%d")
+            return f"strftime('%Y-%m-%d', {date_field}) >= '{start_date}'"
+        elif period == "month":
+            # 本月
+            start_date = now.strftime("%Y-%m-01")
+            return f"strftime('%Y-%m', {date_field}) = '{now.strftime('%Y-%m')}'"
+        elif period == "quarter":
+            # 本季度
+            quarter = (now.month - 1) // 3
+            first_month = quarter * 3 + 1
+            start_date = now.replace(month=first_month, day=1).strftime("%Y-%m-%d")
+            return f"strftime('%Y-%m-%d', {date_field}) >= '{start_date}'"
+        else:  # year
+            # 本年
+            year = now.strftime("%Y")
+            return f"strftime('%Y', {date_field}) = '{year}'"
+
     def update_kpi_cards(self):
         """更新KPI指标卡片的数据"""
-        # 更新业务事件KPI
-        today = datetime.now().strftime("%Y-%m-%d")
-        today_business = [b for b in self.business_data if b["event_date"] == today]
-        
-        business_value_label = self.findChild(QLabel, "业务事件总数_value")
-        business_subtitle_label = self.findChild(QLabel, "业务事件总数_subtitle")
-        
-        if business_value_label and business_subtitle_label:
-            business_value_label.setText(str(len(self.business_data)))
-            business_subtitle_label.setText(f"今日新增: {len(today_business)}")
-        
-        # 更新财务记录KPI
-        current_month = datetime.now().strftime("%Y-%m")
-        month_finance = [f for f in self.finance_data 
-                         if f["record_date"].startswith(current_month)]
-        
-        finance_value_label = self.findChild(QLabel, "财务记录总数_value")
-        finance_subtitle_label = self.findChild(QLabel, "财务记录总数_subtitle")
-        
-        if finance_value_label and finance_subtitle_label:
-            finance_value_label.setText(str(len(self.finance_data)))
-            finance_subtitle_label.setText(f"本月: {len(month_finance)}")
-        
-        # 更新待审批事项KPI
-        pending_approvals = [a for a in self.approval_data 
-                             if a["status"] in ["待审批", "审批中"]]
-        processed_approvals = [a for a in self.approval_data 
-                               if a["status"] in ["已通过", "已拒绝"]]
-        
-        approval_value_label = self.findChild(QLabel, "待审批事项_value")
-        approval_subtitle_label = self.findChild(QLabel, "待审批事项_subtitle")
-        
-        if approval_value_label and approval_subtitle_label:
-            approval_value_label.setText(str(len(pending_approvals)))
-            approval_subtitle_label.setText(f"已处理: {len(processed_approvals)}")
-        
-        # 更新预算执行率KPI
-        if self.budget_data:
-            total_budget = sum(b["amount"] for b in self.budget_data)
-            used_budget = sum(b["used_amount"] for b in self.budget_data)
-            remaining_budget = total_budget - used_budget
-            execution_rate = 0 if total_budget == 0 else round((used_budget / total_budget) * 100)
+        try:
+            # 计算业务KPI
+            business_count = len(self.business_data)
+            today = datetime.now().strftime("%Y-%m-%d")
+            today_business_count = sum(1 for event in self.business_data 
+                                    if event.get('event_date', '').startswith(today))
             
-            budget_value_label = self.findChild(QLabel, "预算执行率_value")
-            budget_subtitle_label = self.findChild(QLabel, "预算执行率_subtitle")
+            # 计算财务KPI
+            finance_count = len(self.finance_data)
+            current_month = datetime.now().strftime("%Y-%m")
+            month_finance_count = sum(1 for record in self.finance_data 
+                                   if record.get('transaction_date', '').startswith(current_month))
             
-            if budget_value_label and budget_subtitle_label:
-                budget_value_label.setText(f"{execution_rate}%")
-                budget_subtitle_label.setText(f"剩余预算: ¥{remaining_budget:,.2f}")
+            # 计算审批KPI
+            pending_count = sum(1 for approval in self.approval_data 
+                            if approval.get('status') in ['待审批', '审批中'])
+            processed_count = sum(1 for approval in self.approval_data 
+                              if approval.get('status') in ['已通过', '已拒绝'])
+            
+            # 计算预算KPI
+            total_budget = sum(budget.get('amount', 0) for budget in self.budget_data)
+            used_budget = sum(budget.get('used_amount', 0) for budget in self.budget_data)
+            
+            budget_rate = 0
+            if total_budget > 0:
+                budget_rate = (used_budget / total_budget) * 100
+            
+            # 更新业务KPI
+            self.update_kpi_card(self.business_card, "业务事件总数", 
+                               str(business_count), 
+                               f"今日: {today_business_count}")
+            
+            # 更新财务KPI
+            self.update_kpi_card(self.finance_card, "财务记录总数", 
+                               str(finance_count), 
+                               f"本月: {month_finance_count}")
+            
+            # 更新审批KPI
+            self.update_kpi_card(self.approval_card, "待审批事项", 
+                               str(pending_count), 
+                               f"已处理: {processed_count}")
+            
+            # 更新预算KPI
+            self.update_kpi_card(self.budget_card, "预算执行率", 
+                               f"{budget_rate:.1f}%", 
+                               f"总预算: ¥{total_budget:,.2f}")
+            
+            print("KPI指标卡片更新完成")
+            
+        except Exception as e:
+            print(f"更新KPI指标卡片时出错: {str(e)}")
+            import traceback
+            traceback.print_exc()
+
+    def update_kpi_card(self, card, title, value, subtitle):
+        """更新单个KPI指标卡片的数据"""
+        value_label = card.findChild(QLabel, f"{title.lower().replace(' ', '_')}_value")
+        subtitle_label = card.findChild(QLabel, f"{title.lower().replace(' ', '_')}_subtitle")
+            
+        if value_label and subtitle_label:
+            value_label.setText(value)
+            subtitle_label.setText(subtitle)
 
     def update_charts(self):
         """更新图表数据"""
@@ -302,8 +611,8 @@ class DashboardView(QWidget):
         self.ax2.clear()
         
         # 重新设置标题
-        self.ax1.set_title("Business Types")
-        self.ax2.set_title("Finance Trends")
+        self.ax1.set_title("业务类型分布")
+        self.ax2.set_title("财务收支趋势")
         
         # 更新业务类型分布图
         self.update_business_type_chart()
@@ -317,33 +626,121 @@ class DashboardView(QWidget):
 
     def update_business_type_chart(self):
         """更新业务类型分布饼图"""
-        # 收集数据
-        business_types = {}
-        for item in self.business_data:
-            event_type = item.get("event_type", "Unknown")
-            if event_type in business_types:
-                business_types[event_type] += 1
-            else:
-                business_types[event_type] = 1
+        # 清除之前的图表内容
+        self.ax1.clear()
         
-        if not business_types:
-            # 如果没有数据，创建一个空图
-            self.ax1.text(0.5, 0.5, 'No Data', 
+        # 如果没有数据，创建一个空图
+        if not self.business_data:
+            self.ax1.text(0.5, 0.5, '暂无数据', 
                          horizontalalignment='center',
-                         verticalalignment='center')
+                         verticalalignment='center',
+                         fontsize=12)
             return
-            
-        # 准备数据
-        labels = list(business_types.keys())
-        sizes = list(business_types.values())
         
-        # 绘制饼图
-        self.ax1.pie(sizes, labels=labels, autopct='%1.1f%%',
-                    startangle=90, shadow=True)
-        self.ax1.axis('equal')  # 确保饼图是圆形的
+        try:
+            business_types = {}
+            
+            # 尝试连接数据库直接获取聚合数据
+            if hasattr(self, 'db_path') and os.path.exists(self.db_path):
+                try:
+                    conn = sqlite3.connect(self.db_path)
+                    conn.row_factory = sqlite3.Row
+                    cursor = conn.cursor()
+                    
+                    # 按业务类型分组统计
+                    cursor.execute("""
+                        SELECT 
+                            event_type, 
+                            COUNT(*) as count 
+                        FROM 
+                            business_events 
+                        GROUP BY 
+                            event_type
+                        ORDER BY 
+                            count DESC
+                    """)
+                    
+                    results = cursor.fetchall()
+                    conn.close()
+                    
+                    if results:
+                        # 准备数据
+                        business_types = {row['event_type']: row['count'] for row in results}
+                except Exception as db_error:
+                    print(f"数据库查询失败: {str(db_error)}")
+            
+            # 如果没有从数据库获取到数据，从内存中的业务数据计算
+            if not business_types:
+                for item in self.business_data:
+                    event_type = item.get("event_type", "未知")
+                    if event_type in business_types:
+                        business_types[event_type] += 1
+                    else:
+                        business_types[event_type] = 1
+            
+            # 如果没有数据，显示提示信息
+            if not business_types:
+                self.ax1.text(0.5, 0.5, '暂无业务类型数据', 
+                             horizontalalignment='center',
+                             verticalalignment='center',
+                             fontsize=12)
+                return
+                
+            # 准备数据
+            labels = list(business_types.keys())
+            sizes = list(business_types.values())
+            
+            # 设置颜色
+            colors = ['#1976D2', '#4CAF50', '#FF9800', '#E91E63', '#9C27B0', '#00BCD4', '#FFEB3B', '#795548']
+            
+            # 确保颜色足够
+            while len(colors) < len(labels):
+                colors.extend(colors)
+            
+            # 绘制饼图
+            wedges, texts, autotexts = self.ax1.pie(
+                sizes, 
+                labels=None,  # 先不显示标签
+                autopct='%1.1f%%', 
+                startangle=90, 
+                colors=colors[:len(labels)],
+                wedgeprops={'edgecolor': 'w', 'linewidth': 1},
+                textprops={'fontsize': 10}
+            )
+            
+            # 设置标签和百分比的字体
+            for autotext in autotexts:
+                autotext.set_fontsize(9)
+            
+            # 添加图例，显示标签
+            self.ax1.legend(
+                wedges, 
+                labels, 
+                title="业务类型", 
+                loc="center left", 
+                bbox_to_anchor=(1, 0, 0.5, 1),
+                fontsize=9
+            )
+            
+            # 等比例显示
+            self.ax1.axis('equal')
+            
+        except Exception as e:
+            print(f"更新业务类型饼图时出错: {str(e)}")
+            import traceback
+            traceback.print_exc()
+            
+            # 出错时创建一个空图
+            self.ax1.text(0.5, 0.5, '数据加载错误', 
+                         horizontalalignment='center',
+                         verticalalignment='center',
+                         fontsize=12)
 
     def update_finance_trend_chart(self):
         """更新财务收支趋势图"""
+        # 清除之前的图表内容
+        self.ax2.clear()
+        
         period = self.period_combo.currentData()
         
         # 确定日期范围
@@ -351,269 +748,210 @@ class DashboardView(QWidget):
         if period == "week":
             start_date = (now - timedelta(days=now.weekday())).strftime("%Y-%m-%d")
             days = 7
+            date_format = "%Y-%m-%d"
+            group_by = "date(transaction_date)"
         elif period == "month":
             start_date = now.strftime("%Y-%m-01")
             days = 30
+            date_format = "%Y-%m-%d"
+            group_by = "date(transaction_date)"
         elif period == "quarter":
             quarter_month = ((now.month - 1) // 3) * 3 + 1
             start_date = now.replace(month=quarter_month, day=1).strftime("%Y-%m-%d")
             days = 90
+            date_format = "%Y-%m"
+            group_by = "strftime('%Y-%m', transaction_date)"
         else:  # year
             start_date = now.strftime("%Y-01-01")
             days = 365
+            date_format = "%Y-%m"
+            group_by = "strftime('%Y-%m', transaction_date)"
         
         # 如果没有数据，创建一个空图
-        if not self.finance_data:
+        if not self.finance_data and not hasattr(self, 'db_path'):
             self.ax2.text(0.5, 0.5, '暂无财务数据', 
                          horizontalalignment='center',
-                         verticalalignment='center')
+                         verticalalignment='center',
+                         fontsize=12)
             return
             
-        # 初始化收入和支出数据
-        income_data = {}
-        expense_data = {}
-        
-        # 创建一些测试数据，保证图表能显示
-        if len(self.finance_data) == 0:
-            # 创建一些测试数据
-            for i in range(6):
-                date = (now - timedelta(days=i*30)).strftime("%Y-%m-%d")
-                income_data[date] = 10000 + i*1000
-                expense_data[date] = 5000 + i*500
-        else:
-            # 按日期分组数据
-            try:
+        try:
+            # 尝试从数据库直接获取聚合数据
+            income_data = {}
+            expense_data = {}
+            
+            if hasattr(self, 'db_path') and os.path.exists(self.db_path):
+                try:
+                    conn = sqlite3.connect(self.db_path)
+                    conn.row_factory = sqlite3.Row
+                    cursor = conn.cursor()
+                    
+                    # 获取收入数据
+                    income_query = f"""
+                        SELECT 
+                            strftime('{date_format}', transaction_date) as date,
+                            SUM(amount) as total
+                        FROM 
+                            financial_transactions
+                        WHERE 
+                            transaction_date >= ?
+                            AND direction = '收入'
+                        GROUP BY 
+                            {group_by}
+                        ORDER BY 
+                            date
+                    """
+                    
+                    cursor.execute(income_query, (start_date,))
+                    income_results = cursor.fetchall()
+                    
+                    # 获取支出数据
+                    expense_query = f"""
+                        SELECT 
+                            strftime('{date_format}', transaction_date) as date,
+                            SUM(amount) as total
+                        FROM 
+                            financial_transactions
+                        WHERE 
+                            transaction_date >= ?
+                            AND direction = '支出'
+                        GROUP BY 
+                            {group_by}
+                        ORDER BY 
+                            date
+                    """
+                    
+                    cursor.execute(expense_query, (start_date,))
+                    expense_results = cursor.fetchall()
+                    
+                    # 处理查询结果
+                    for row in income_results:
+                        income_data[row['date']] = row['total']
+                        
+                    for row in expense_results:
+                        expense_data[row['date']] = row['total']
+                        
+                    conn.close()
+                except Exception as db_error:
+                    print(f"财务数据库查询失败: {str(db_error)}")
+            
+            # 如果没有从数据库获取到数据，尝试从finance_data中解析
+            if not income_data and not expense_data and self.finance_data:
+                # 按日期分组数据
                 for record in self.finance_data:
                     # 检查记录中是否有必要的字段
-                    record_date = record.get("record_date", "")
-                    record_type = record.get("record_type", "")
+                    if period == "quarter" or period == "year":
+                        record_date = record.get("record_date", "")[:7]  # 截取到月
+                    else:
+                        record_date = record.get("record_date", "")
+                        
+                    direction = record.get("direction", "")
                     amount = record.get("amount", 0)
                     
                     # 跳过不完整的记录
                     if not record_date or record_date < start_date:
                         continue
                         
-                    if record_type == "收入":
+                    if direction == "收入":
                         if record_date in income_data:
                             income_data[record_date] += amount
                         else:
                             income_data[record_date] = amount
-                    else:  # 默认为支出
+                    elif direction == "支出":
                         if record_date in expense_data:
                             expense_data[record_date] += amount
                         else:
                             expense_data[record_date] = amount
-            except Exception as e:
-                # 记录异常但继续执行
-                print(f"处理财务数据时出错: {str(e)}")
-                # 创建一些测试数据
-                for i in range(6):
-                    date = (now - timedelta(days=i*30)).strftime("%Y-%m-%d")
-                    income_data[date] = 10000 + i*1000
-                    expense_data[date] = 5000 + i*500
-        
-        # 为了简化图表，根据时间范围分组数据
-        if days > 30 and income_data and expense_data:
-            # 按月分组
-            monthly_income = {}
-            monthly_expense = {}
             
-            for date, amount in income_data.items():
-                month = date[:7]  # 取年月部分
-                if month in monthly_income:
-                    monthly_income[month] += amount
-                else:
-                    monthly_income[month] = amount
+            # 如果仍然没有数据，不再使用模拟数据，而是显示无数据提示
+            if not income_data and not expense_data:
+                self.ax2.text(0.5, 0.5, '未找到财务数据', 
+                             horizontalalignment='center',
+                             verticalalignment='center',
+                             fontsize=12)
+                return
             
-            for date, amount in expense_data.items():
-                month = date[:7]  # 取年月部分
-                if month in monthly_expense:
-                    monthly_expense[month] += amount
-                else:
-                    monthly_expense[month] = amount
+            # 数据验证和清洗
+            self.validate_finance_data(income_data, expense_data)
             
             # 准备绘图数据
-            dates = sorted(set(list(monthly_income.keys()) + list(monthly_expense.keys())))
-            income_values = [monthly_income.get(date, 0) for date in dates]
-            expense_values = [monthly_expense.get(date, 0) for date in dates]
-            
-            # 绘制图表
-            self.ax2.plot(range(len(dates)), income_values, 'g-', label='Income')
-            self.ax2.plot(range(len(dates)), expense_values, 'r-', label='Expense')
-            self.ax2.set_xticks(range(len(dates)))
-            self.ax2.set_xticklabels(dates, rotation=45)
-        else:
-            # 按天绘制
             dates = sorted(set(list(income_data.keys()) + list(expense_data.keys())))
             income_values = [income_data.get(date, 0) for date in dates]
             expense_values = [expense_data.get(date, 0) for date in dates]
             
             # 绘制图表
-            self.ax2.plot(range(len(dates)), income_values, 'g-', label='Income')
-            self.ax2.plot(range(len(dates)), expense_values, 'r-', label='Expense')
+            self.ax2.plot(range(len(dates)), income_values, 'g-', marker='o', label='收入', linewidth=2)
+            self.ax2.plot(range(len(dates)), expense_values, 'r-', marker='o', label='支出', linewidth=2)
             self.ax2.set_xticks(range(len(dates)))
             self.ax2.set_xticklabels(dates, rotation=45)
+            
+            # 添加数据标签
+            for i, (income, expense) in enumerate(zip(income_values, expense_values)):
+                if income > 0:
+                    self.ax2.annotate(f'{income/10000:.1f}万', 
+                                   (i, income),
+                                   textcoords="offset points", 
+                                   xytext=(0, 10), 
+                                   ha='center',
+                                   fontsize=8)
+                if expense > 0:
+                    self.ax2.annotate(f'{expense/10000:.1f}万', 
+                                   (i, expense),
+                                   textcoords="offset points", 
+                                   xytext=(0, -15), 
+                                   ha='center',
+                                   fontsize=8)
         
-        self.ax2.legend()
-        self.ax2.grid(True)
-        self.ax2.set_ylabel('Amount')
+            self.ax2.legend()
+            self.ax2.grid(True, linestyle='--', alpha=0.7)
+            self.ax2.set_ylabel('金额（元）')
+            self.ax2.set_title('财务收支趋势')
+            
+        except Exception as e:
+            print(f"更新财务趋势图时出错: {str(e)}")
+            import traceback
+            traceback.print_exc()
+            
+            # 出错时创建一个空图
+            self.ax2.text(0.5, 0.5, '财务数据加载错误', 
+                         horizontalalignment='center',
+                         verticalalignment='center',
+                         fontsize=12)
+
+    def validate_finance_data(self, income_data, expense_data):
+        """验证财务数据有效性"""
+        # 确保所有值都是数字且为正
+        for date in list(income_data.keys()):
+            try:
+                income_data[date] = max(0, float(income_data[date]))
+            except (ValueError, TypeError):
+                del income_data[date]
+                
+        for date in list(expense_data.keys()):
+            try:
+                expense_data[date] = max(0, float(expense_data[date]))
+            except (ValueError, TypeError):
+                del expense_data[date]
 
     def update_tables(self):
         """更新表格数据"""
-        self.update_recent_business_table()
-        self.update_recent_finance_table()
-        self.update_pending_approval_table()
+        # 不再更新表格，因为已删除
+        pass
 
     def update_recent_business_table(self):
         """更新最近业务事件表格"""
-        self.recent_business_table.setRowCount(0)
-        
-        # 如果没有数据
-        if not self.business_data:
-            return
-            
-        try:
-            # 按日期排序，最新的在前面
-            sorted_data = sorted(self.business_data, 
-                                key=lambda x: x.get("event_date", ""), 
-                                reverse=True)[:10]  # 只取最近10条
-            
-            for row, item in enumerate(sorted_data):
-                self.recent_business_table.insertRow(row)
-                
-                self.recent_business_table.setItem(row, 0, QTableWidgetItem(item.get("project_name", "")))
-                self.recent_business_table.setItem(row, 1, QTableWidgetItem(item.get("event_type", "")))
-                self.recent_business_table.setItem(row, 2, QTableWidgetItem(f"¥{item.get('amount', 0):,.2f}"))
-                self.recent_business_table.setItem(row, 3, QTableWidgetItem(item.get("event_date", "")))
-                
-                # 状态单元格 - 优化状态显示
-                status = item.get("status", "")
-                status_label = QLabel(status)
-                status_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-                
-                # 根据状态设置样式类
-                if status == "新建":
-                    status_label.setProperty("class", "status-new")
-                elif status == "待审批":
-                    status_label.setProperty("class", "status-pending")
-                elif status == "审批中":
-                    status_label.setProperty("class", "status-processing")
-                elif status == "已审批":
-                    status_label.setProperty("class", "status-approved")
-                elif status == "已入账":
-                    status_label.setProperty("class", "status-recorded")
-                elif status == "已完成":
-                    status_label.setProperty("class", "status-completed")
-                elif status == "已拒绝":
-                    status_label.setProperty("class", "status-rejected")
-                
-                # 将状态标签添加到单元格中
-                status_cell = QWidget()
-                status_layout = QHBoxLayout(status_cell)
-                status_layout.setContentsMargins(2, 2, 2, 2)
-                status_layout.addWidget(status_label)
-                self.recent_business_table.setCellWidget(row, 4, status_cell)
-        except Exception as e:
-            print(f"更新业务表格时出错: {str(e)}")
-            QMessageBox.warning(self, "错误", "更新业务事件表格时发生错误")
+        # 此方法保留但不执行任何操作
+        pass
 
     def update_recent_finance_table(self):
         """更新最近财务记录表格"""
-        self.recent_finance_table.setRowCount(0)
-        
-        # 如果没有数据
-        if not self.finance_data:
-            return
-        
-        try:
-            # 按日期排序，最新的在前面
-            sorted_data = sorted(self.finance_data, 
-                                key=lambda x: x.get("record_date", ""), 
-                                reverse=True)[:10]  # 只取最近10条
-            
-            for row, item in enumerate(sorted_data):
-                self.recent_finance_table.insertRow(row)
-                
-                self.recent_finance_table.setItem(row, 0, QTableWidgetItem(item.get("record_type", "Unknown")))
-                self.recent_finance_table.setItem(row, 1, QTableWidgetItem(item.get("account", "")))
-                
-                # 根据类型显示不同颜色的金额
-                amount = item.get("amount", 0)
-                amount_item = QTableWidgetItem(f"¥{amount:,.2f}")
-                if item.get("record_type", "") == "收入":
-                    amount_item.setForeground(QColor("green"))
-                else:
-                    amount_item.setForeground(QColor("red"))
-                self.recent_finance_table.setItem(row, 2, amount_item)
-                
-                self.recent_finance_table.setItem(row, 3, QTableWidgetItem(item.get("record_date", "")))
-                
-                # 状态单元格
-                status = item.get("status", "")
-                status_label = QLabel(status)
-                status_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-                
-                # 根据状态设置样式
-                if status == "已入账":
-                    status_label.setProperty("class", "status-recorded")
-                elif status == "已审核":
-                    status_label.setProperty("class", "status-approved")
-                
-                status_cell = QWidget()
-                status_layout = QHBoxLayout(status_cell)
-                status_layout.setContentsMargins(2, 2, 2, 2)
-                status_layout.addWidget(status_label)
-                self.recent_finance_table.setCellWidget(row, 4, status_cell)
-        except Exception as e:
-            print(f"更新财务表格时出错: {str(e)}")
-            QMessageBox.warning(self, "错误", "更新财务记录表格时发生错误")
+        # 此方法保留但不执行任何操作
+        pass
 
     def update_pending_approval_table(self):
         """更新待处理审批表格"""
-        self.pending_approval_table.setRowCount(0)
-        
-        # 如果没有数据
-        if not self.approval_data:
-            return
-            
-        try:
-            # 过滤待处理的审批
-            pending_data = [a for a in self.approval_data 
-                            if a.get("status", "") in ["待审批", "审批中"]]
-            
-            for row, item in enumerate(pending_data):
-                self.pending_approval_table.insertRow(row)
-                
-                self.pending_approval_table.setItem(row, 0, QTableWidgetItem(item.get("applicant_name", "")))
-                self.pending_approval_table.setItem(row, 1, QTableWidgetItem(item.get("approval_type", "")))
-                self.pending_approval_table.setItem(row, 2, QTableWidgetItem(item.get("apply_date", "")))
-                
-                # 状态单元格
-                status = item.get("status", "")
-                status_label = QLabel(status)
-                status_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-                status_label.setProperty("class", "status-pending")
-                
-                status_cell = QWidget()
-                status_layout = QHBoxLayout(status_cell)
-                status_layout.setContentsMargins(2, 2, 2, 2)
-                status_layout.addWidget(status_label)
-                self.pending_approval_table.setCellWidget(row, 3, status_cell)
-                
-                # 操作按钮
-                btn_widget = QWidget()
-                btn_layout = QHBoxLayout(btn_widget)
-                btn_layout.setContentsMargins(2, 2, 2, 2)
-                
-                process_btn = QPushButton("处理")
-                process_btn.setProperty("approval_id", item.get("id", 0))
-                process_btn.clicked.connect(lambda _, a_id=item.get("id", 0): self.process_approval(a_id))
-                btn_layout.addWidget(process_btn)
-                
-                self.pending_approval_table.setCellWidget(row, 4, btn_widget)
-        except Exception as e:
-            print(f"更新审批表格时出错: {str(e)}")
-            QMessageBox.warning(self, "错误", "更新审批表格时发生错误")
+        # 此方法保留但不执行任何操作
+        pass
 
     def process_approval(self, approval_id):
         """处理审批"""

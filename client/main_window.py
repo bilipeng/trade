@@ -27,6 +27,9 @@ class MainWindow(QMainWindow):
         self.user_data = None
         self.token = None
         
+        # 设置深色主题
+        self.apply_dark_theme()
+        
         # 添加自动刷新定时器
         self.refresh_timer = QTimer(self)
         self.refresh_timer.timeout.connect(self.auto_refresh)
@@ -94,18 +97,15 @@ class MainWindow(QMainWindow):
         central_widget = QWidget()
         self.setCentralWidget(central_widget)
         
-        # 主布局 - 使用分割器
+        # 主布局
         main_layout = QHBoxLayout(central_widget)
         main_layout.setContentsMargins(0, 0, 0, 0)
         main_layout.setSpacing(0)
         
-        # 创建分割器
-        self.main_splitter = QSplitter(Qt.Orientation.Horizontal)
-        main_layout.addWidget(self.main_splitter)
-        
         # 侧边导航栏
         self.nav_widget = QWidget()
         self.nav_widget.setObjectName("nav_widget")
+        self.nav_widget.setFixedWidth(280)  # 固定宽度，不可调整
         
         nav_layout = QVBoxLayout(self.nav_widget)
         nav_layout.setContentsMargins(0, 0, 0, 0)
@@ -218,13 +218,13 @@ class MainWindow(QMainWindow):
         nav_layout.addWidget(logout_btn)
         
         # 添加版权信息
-        copyright_label = QLabel("© 2023 业财融合系统")
+        copyright_label = QLabel("© 2025 业财融合系统")
         copyright_label.setObjectName("copyright_label")
         copyright_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         nav_layout.addWidget(copyright_label)
         
-        # 将导航栏添加到分割器
-        self.main_splitter.addWidget(self.nav_widget)
+        # 将导航栏添加到主布局
+        main_layout.addWidget(self.nav_widget)
         
         # 创建内容区域
         self.content_container = QWidget()
@@ -269,15 +269,15 @@ class MainWindow(QMainWindow):
         header_layout.addWidget(quick_actions)
         content_layout.addWidget(header_widget)
         
+        # 添加内容页面
+        self.content_pages = QStackedWidget()
+        content_layout.addWidget(self.content_pages)
+        
         # 初始化页面内容
         self.init_pages()
         
-        # 将内容区域添加到分割器
-        self.main_splitter.addWidget(self.content_container)
-        
-        # 设置分割器比例
-        self.main_splitter.setStretchFactor(0, 0)  # 导航区不伸展
-        self.main_splitter.setStretchFactor(1, 1)  # 内容区伸展
+        # 将内容区域添加到主布局
+        main_layout.addWidget(self.content_container, 1)
         
         # 添加状态栏
         self.statusBar = QStatusBar()
@@ -420,7 +420,7 @@ class MainWindow(QMainWindow):
     def show_help(self):
         """显示帮助信息"""
         # 获取当前视图
-        current_widget = self.content_tabs.currentWidget()
+        current_widget = self.content_pages.currentWidget()
         help_title = "系统帮助"
         help_content = "这是业财融合管理系统的帮助信息。"
         
@@ -585,7 +585,7 @@ class MainWindow(QMainWindow):
     def auto_refresh(self):
         """自动刷新当前视图"""
         # 获取当前视图
-        current_widget = self.content_tabs.currentWidget()
+        current_widget = self.content_pages.currentWidget()
         
         # 如果当前视图有load_data方法，调用它
         if hasattr(current_widget, "load_data"):
@@ -598,10 +598,6 @@ class MainWindow(QMainWindow):
 
     def init_pages(self):
         """初始化内容页面"""
-        # 创建堆叠窗口Widget用于管理不同的页面
-        self.content_pages = QStackedWidget()
-        self.main_splitter.addWidget(self.content_pages)
-        
         # 仪表板页面
         self.dashboard_view = DashboardView(self.token, self.user_data)
         self.content_pages.addWidget(self.dashboard_view)
@@ -625,6 +621,33 @@ class MainWindow(QMainWindow):
         # 默认显示仪表板
         self.content_pages.setCurrentIndex(0)
         self.current_page_title.setText("仪表板")
+
+    def apply_dark_theme(self):
+        """应用深色主题到应用程序"""
+        # 设置应用程序图标主题
+        QIcon.setThemeName("dark")
+        
+        # 保存主题设置
+        self.settings.setValue("theme", "dark")
+        
+        # 为特殊控件设置深色主题调色板
+        dark_palette = QPalette()
+        dark_palette.setColor(QPalette.ColorRole.Window, QColor(18, 18, 18))
+        dark_palette.setColor(QPalette.ColorRole.WindowText, QColor(255, 255, 255))
+        dark_palette.setColor(QPalette.ColorRole.Base, QColor(30, 30, 30))
+        dark_palette.setColor(QPalette.ColorRole.AlternateBase, QColor(26, 26, 26))
+        dark_palette.setColor(QPalette.ColorRole.ToolTipBase, QColor(45, 45, 45))
+        dark_palette.setColor(QPalette.ColorRole.ToolTipText, QColor(255, 255, 255))
+        dark_palette.setColor(QPalette.ColorRole.Text, QColor(255, 255, 255))
+        dark_palette.setColor(QPalette.ColorRole.Button, QColor(30, 30, 30))
+        dark_palette.setColor(QPalette.ColorRole.ButtonText, QColor(255, 255, 255))
+        dark_palette.setColor(QPalette.ColorRole.BrightText, QColor(144, 202, 249))
+        dark_palette.setColor(QPalette.ColorRole.Link, QColor(144, 202, 249))
+        dark_palette.setColor(QPalette.ColorRole.Highlight, QColor(61, 61, 61))
+        dark_palette.setColor(QPalette.ColorRole.HighlightedText, QColor(144, 202, 249))
+        
+        # 应用调色板
+        self.setPalette(dark_palette)
 
 if __name__ == "__main__":
     app = QApplication(sys.argv)

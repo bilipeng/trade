@@ -19,34 +19,21 @@ class LoginWindow(QWidget):
         self.init_ui()
         
     def init_ui(self):
+        """初始化UI"""
         # 设置窗口
-        self.setWindowTitle('业财融合管理系统 - 登录')
-        self.setFixedSize(450, 600)
-        self.setWindowIcon(QIcon('client/ui/assets/logo.png'))
-        self.setObjectName("login_window")
+        self.setWindowTitle("业财融合管理系统 - 登录")
+        self.setFixedSize(480, 620)
         
         # 主布局
         main_layout = QVBoxLayout()
-        main_layout.setSpacing(15)
-        main_layout.setContentsMargins(40, 40, 40, 40)
+        main_layout.setContentsMargins(30, 40, 30, 30)
+        main_layout.setSpacing(10)
         
-        # 添加logo
-        logo_layout = QHBoxLayout()
-        logo_label = QLabel()
-        logo_path = os.path.join('client', 'ui', 'assets', 'logo.png')
-        if os.path.exists(logo_path):
-            pixmap = QPixmap(logo_path)
-            logo_label.setPixmap(pixmap.scaled(80, 80, Qt.AspectRatioMode.KeepAspectRatio))
-        else:
-            # 如果找不到logo，使用文本替代
-            logo_label = QLabel("💼")
-            logo_label.setObjectName("logo_label")
-        
+        # LOGO区域
+        logo_label = QLabel("🔐")
+        logo_label.setObjectName("logo_label")
         logo_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        logo_layout.addStretch()
-        logo_layout.addWidget(logo_label)
-        logo_layout.addStretch()
-        main_layout.addLayout(logo_layout)
+        main_layout.addWidget(logo_label)
         
         # 标题
         title_label = QLabel("业财融合管理系统")
@@ -55,16 +42,16 @@ class LoginWindow(QWidget):
         main_layout.addWidget(title_label)
         
         # 副标题
-        subtitle_label = QLabel("用户登录")
+        subtitle_label = QLabel("登录您的账户")
         subtitle_label.setObjectName("subtitle_label")
         subtitle_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         main_layout.addWidget(subtitle_label)
         
-        # 添加表单容器
-        form_container = QFrame()
+        # 登录表单容器
+        form_container = QWidget()
         form_container.setObjectName("form_container")
         form_layout = QVBoxLayout(form_container)
-        form_layout.setContentsMargins(20, 25, 20, 25)
+        form_layout.setContentsMargins(20, 20, 20, 20)
         form_layout.setSpacing(15)
         
         # 用户名
@@ -74,7 +61,7 @@ class LoginWindow(QWidget):
         
         self.username_input = QLineEdit()
         self.username_input.setPlaceholderText("请输入用户名")
-        self.username_input.setClearButtonEnabled(True)
+        self.username_input.setMinimumHeight(45)
         form_layout.addWidget(self.username_input)
         
         # 密码
@@ -83,66 +70,61 @@ class LoginWindow(QWidget):
         form_layout.addWidget(password_label)
         
         self.password_input = QLineEdit()
-        self.password_input.setEchoMode(QLineEdit.EchoMode.Password)
         self.password_input.setPlaceholderText("请输入密码")
-        self.password_input.setClearButtonEnabled(True)
+        self.password_input.setEchoMode(QLineEdit.EchoMode.Password)
+        self.password_input.setMinimumHeight(45)
         form_layout.addWidget(self.password_input)
         
-        # 记住密码
+        # 记住我选项
         remember_layout = QHBoxLayout()
-        self.remember_checkbox = QCheckBox("记住密码")
+        self.remember_checkbox = QCheckBox("记住我")
         remember_layout.addWidget(self.remember_checkbox)
-        remember_layout.addStretch()
         
-        # 添加忘记密码链接
         forgot_password = QLabel("忘记密码?")
         forgot_password.setObjectName("forgot_password")
+        forgot_password.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+        forgot_password.setCursor(Qt.CursorShape.PointingHandCursor)
         remember_layout.addWidget(forgot_password)
         
         form_layout.addLayout(remember_layout)
         
-        # 添加分隔线
+        # 登录按钮
+        self.login_button = QPushButton("登 录")
+        self.login_button.setObjectName("loginButton")
+        self.login_button.setMinimumHeight(50)
+        self.login_button.clicked.connect(self.login)
+        form_layout.addWidget(self.login_button)
+        
+        # 分隔线
         separator = QFrame()
         separator.setObjectName("login_separator")
         separator.setFrameShape(QFrame.Shape.HLine)
         form_layout.addWidget(separator)
         
-        # 登录按钮
-        self.login_button = QPushButton("登 录")
-        self.login_button.setObjectName("loginButton")
-        self.login_button.setFixedHeight(50)
-        self.login_button.clicked.connect(self.login)
-        form_layout.addWidget(self.login_button)
-        
-        # 显示系统默认用户信息
-        default_users_info = QLabel("""<html>系统默认用户: <br>
-                                    admin (管理员) <br>
-                                    zhangsan (财务人员) <br>
-                                    lisi (业务人员) <br>
-                                    密码均为：admin 或 password123</html>""")
+        # 默认用户提示
+        default_users_info = QLabel("系统默认用户:  \n"
+                                 "- 用户名: admin, 密码: admin (管理员权限)  \n"
+                                 "- 用户名: finance, 密码: finance (财务权限)  \n"
+                                 "- 用户名: business, 密码: business (业务权限)")
         default_users_info.setObjectName("default_users_info")
-        default_users_info.setAlignment(Qt.AlignmentFlag.AlignCenter)
         form_layout.addWidget(default_users_info)
         
-        main_layout.addWidget(form_container)
+        # 添加表单到主布局
+        main_layout.addWidget(form_container, 1)
+        
+        # 版本信息
+        version_label = QLabel("版本 1.0.0 | © 2023 业财融合管理系统")
+        version_label.setObjectName("version_label_login")
+        version_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        main_layout.addWidget(version_label)
+        
+        self.setLayout(main_layout)
         
         # 读取保存的用户名密码
         if self.settings.value("remember_password", False, type=bool):
             self.remember_checkbox.setChecked(True)
             self.username_input.setText(self.settings.value("username", ""))
             self.password_input.setText(self.settings.value("password", ""))
-        
-        # 版本信息
-        version_layout = QHBoxLayout()
-        version_label = QLabel("© 2023 业财融合系统 v1.0.0")
-        version_label.setObjectName("version_label_login")
-        version_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        version_layout.addStretch()
-        version_layout.addWidget(version_label)
-        version_layout.addStretch()
-        main_layout.addLayout(version_layout)
-        
-        self.setLayout(main_layout)
         
         # 设置Tab顺序
         self.username_input.setFocus()

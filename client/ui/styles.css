@@ -1,24 +1,24 @@
 /* 应用主题颜色 */
 :root {
-    --color-primary: #1976D2;
-    --color-primary-light: #64B5F6;
-    --color-primary-dark: #0D47A1;
-    --color-secondary: #00897B;
-    --color-background: #F5F7FA;
-    --color-card-bg: #FFFFFF;
-    --color-text-primary: #212121;
-    --color-text-secondary: #616161;
-    --color-accent: #FF4081;
-    --color-warning: #FFB300;
-    --color-error: #E53935;
-    --color-success: #43A047;
-    --color-sidebar-bg: #1E2A3A;
+    --color-primary: #90CAF9;
+    --color-primary-light: #60A5FA;
+    --color-primary-dark: #1E40AF;
+    --color-secondary: #E0E0E0;
+    --color-background: #121212;
+    --color-card-bg: #1E1E1E;
+    --color-text-primary: #FFFFFF;
+    --color-text-secondary: #B0B0B0;
+    --color-accent: #EC4899;
+    --color-warning: #F59E0B;
+    --color-error: #DC2626;
+    --color-success: #16A34A;
+    --color-sidebar-bg: #1E1E1E;
     --color-sidebar-text: #FFFFFF;
-    --color-gradient-start: #1976D2;
-    --color-gradient-end: #2196F3;
-    --color-hover: rgba(0, 0, 0, 0.05);
-    --box-shadow: 0 2px 8px rgba(0, 0, 0, 0.12);
-    --border-radius: 8px;
+    --color-gradient-start: #90CAF9;
+    --color-gradient-end: #60A5FA;
+    --color-hover: rgba(0, 0, 0, 0.04);
+    --box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
+    --border-radius: 10px;
     --spacing-sm: 8px;
     --spacing-md: 16px;
     --spacing-lg: 24px;
@@ -29,6 +29,7 @@ QMainWindow {
     background-color: var(--color-background);
     min-width: 1280px;
     min-height: 900px;
+    border: none;
 }
 
 QLabel {
@@ -36,11 +37,12 @@ QLabel {
 }
 
 QStatusBar {
-    background-color: var(--color-primary-dark);
+    background: linear-gradient(90deg, var(--color-gradient-start), var(--color-gradient-end));
     color: white;
     padding: var(--spacing-md);
     font-size: 14px;
     font-weight: medium;
+    border-top: 1px solid rgba(255, 255, 255, 0.1);
 }
 
 /* 滚动条样式优化 */
@@ -92,15 +94,17 @@ QScrollBar::sub-line:horizontal {
 #nav_widget {
     background-color: var(--color-sidebar-bg);
     color: var(--color-sidebar-text);
-    min-width: 260px;
+    min-width: 280px;
     max-width: 320px;
     padding-bottom: var(--spacing-md);
+    box-shadow: var(--box-shadow);
 }
 
 #title_widget {
-    background-color: var(--color-primary);
+    background: linear-gradient(135deg, var(--color-gradient-start), var(--color-gradient-end));
     padding: var(--spacing-md) 0;
-    min-height: 80px;
+    min-height: 70px;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.1);
 }
 
 #title_label {
@@ -159,11 +163,12 @@ QScrollBar::sub-line:horizontal {
     padding: var(--spacing-md) var(--spacing-lg);
     border: none;
     color: var(--color-sidebar-text);
-    font-size: 16px;
+    font-size: 15px;
     border-left: 4px solid transparent;
     background-color: transparent;
-    margin: 3px 0;
-    border-radius: 0 var(--border-radius) var(--border-radius) 0;
+    margin: 4px 8px;
+    border-radius: var(--border-radius);
+    transition: all 0.2s ease;
 }
 
 .NavButton:hover {
@@ -181,10 +186,11 @@ QScrollBar::sub-line:horizontal {
     padding: var(--spacing-md) var(--spacing-lg);
     border: none;
     color: var(--color-sidebar-text);
-    font-size: 16px;
+    font-size: 15px;
     background-color: transparent;
-    margin: 3px 0;
-    border-radius: 0 var(--border-radius) var(--border-radius) 0;
+    margin: 4px 8px;
+    border-radius: var(--border-radius);
+    transition: all 0.2s ease;
 }
 
 #settings_btn:hover {
@@ -196,7 +202,7 @@ QScrollBar::sub-line:horizontal {
     padding: var(--spacing-md) var(--spacing-lg);
     border: none;
     color: var(--color-sidebar-text);
-    font-size: 16px;
+    font-size: 15px;
     background-color: transparent;
     margin: 3px 0 var(--spacing-lg) 0;
     border-radius: 0 var(--border-radius) var(--border-radius) 0;
@@ -220,15 +226,17 @@ QScrollBar::sub-line:horizontal {
 
 #header_widget {
     background-color: var(--color-card-bg);
-    border-bottom: 1px solid #E0E0E0;
-    min-height: 70px;
-    box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+    border-bottom: 1px solid rgba(0, 0, 0, 0.06);
+    margin-bottom: var(--spacing-md);
+    border-radius: var(--border-radius);
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
 }
 
 #header_title {
     font-size: 22px;
-    font-weight: bold;
-    color: var(--color-primary-dark);
+    font-weight: 600;
+    color: var(--color-text-primary);
+    letter-spacing: -0.5px;
 }
 
 /* 登录窗口样式 */
@@ -994,4 +1002,4 @@ QTabWidget#recent_tabs::pane {
 .link-button:hover {
     color: var(--color-primary-dark);
     background-color: rgba(25, 118, 210, 0.1);
-} 
+}

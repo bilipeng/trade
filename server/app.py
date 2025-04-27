@@ -407,7 +407,7 @@ async def create_financial_record(record: FinancialRecord, current_user = Depend
 
 # 审批API
 @app.get("/approvals")
-async def get_approvals(status: str = None, current_user = Depends(get_current_user)):
+async def get_approvals(status: str = None, user_id: int = None, current_user = Depends(get_current_user)):
     conn = get_db_connection()
 
     # 构建基本查询
@@ -422,8 +422,12 @@ async def get_approvals(status: str = None, current_user = Depends(get_current_u
     # 添加条件
     conditions = []
 
-    # 非管理员只能查看自己的审批
-    if current_user["role"] != "管理员":
+    # 如果提供了user_id参数，使用该参数（便于客户端筛选）
+    if user_id:
+        conditions.append("a.approver_id = ?")
+        params.append(user_id)
+    # 否则，非管理员只能查看自己的审批
+    elif current_user["role"] != "管理员":
         conditions.append("a.approver_id = ?")
         params.append(current_user["id"])
 
@@ -790,23 +794,24 @@ async def submit_to_approval(event_id: int, current_user = Depends(get_current_u
         # 如果没有找到匹配的审批配置，使用默认配置
         if not configs or len(configs) == 0:
             print("没有找到匹配的审批配置，使用默认配置")
-            # 默认分配给管理员审批
+            
+            # 优先分配给创建者本人审批
             cursor.execute("""
                 INSERT INTO approvals (business_event_id, approver_id, approval_level, status)
-                SELECT ?, id, 1, '待审批'
-                FROM users
-                WHERE role = '管理员'
-                LIMIT 1
-            """, (event_id,))
-
+                VALUES (?, ?, 1, '待审批')
+            """, (event_id, current_user["id"]))
+            
             inserted = cursor.execute("SELECT changes() as changes").fetchone()["changes"]
             if inserted == 0:
-                print("警告: 无法找到管理员用户")
-                # 尝试分配给创建者本人审批
+                print("警告: 无法分配给创建者，尝试分配给管理员")
+                # 如果创建者审批失败，再尝试分配给管理员
                 cursor.execute("""
                     INSERT INTO approvals (business_event_id, approver_id, approval_level, status)
-                    VALUES (?, ?, 1, '待审批')
-                """, (event_id, current_user["id"]))
+                    SELECT ?, id, 1, '待审批'
+                    FROM users
+                    WHERE role = '管理员'
+                    LIMIT 1
+                """, (event_id,))
         else:
             # 创建审批流程
             for config in configs:

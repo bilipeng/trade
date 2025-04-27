@@ -13,7 +13,6 @@ from PyQt6.QtGui import QIcon, QAction, QFont, QColor, QPalette, QPixmap
 from views.business_view import BusinessEventView
 from views.finance_view import FinancialRecordView
 from views.approval_view import ApprovalView
-from views.budget_view import BudgetView
 from views.dashboard_view import DashboardView
 from login import LoginWindow
 
@@ -189,18 +188,25 @@ class MainWindow(QMainWindow):
         nav_layout.addWidget(nav_title)
         
         # 导航按钮
-        self.create_nav_button("仪表板", "📈", "查看业务财务综合数据", nav_layout, 0)
-        self.create_nav_button("业务管理", "📊", "查看和管理业务数据", nav_layout, 1)
+        # 仪表盘按钮只对admin账户可见
+        nav_index = 0
+        if self.user_data['username'] == 'admin' or self.user_data['username'] == 'sunba':
+            self.create_nav_button("仪表板", "📈", "查看业务财务综合数据", nav_layout, nav_index)
+            nav_index += 1
+            
+        self.create_nav_button("业务管理", "📊", "查看和管理业务数据", nav_layout, nav_index)
+        nav_index += 1
         
         # 根据角色显示导航项
         if self.user_data['role'] in ['管理员', '财务人员']:
-            self.create_nav_button("财务管理", "💰", "管理公司财务记录和报表", nav_layout, 2)
+            self.create_nav_button("财务管理", "💰", "管理公司财务记录和报表", nav_layout, nav_index)
+            nav_index += 1
             
         if self.user_data['role'] in ['管理员', '业务人员', '部门主管']:
-            self.create_nav_button("审批管理", "✓", "处理待审批的业务和财务请求", nav_layout, 3)
+            self.create_nav_button("审批管理", "✓", "处理待审批的业务和财务请求", nav_layout, nav_index)
+            nav_index += 1
             
-        if self.user_data['role'] in ['管理员', '财务人员']:
-            self.create_nav_button("预算管理", "📈", "监控和管理部门预算", nav_layout, 4)
+        
             
         # 添加占位空间
         nav_layout.addStretch()
@@ -327,8 +333,7 @@ class MainWindow(QMainWindow):
             self.content_pages.setCurrentWidget(self.finance_view)
         elif title == "审批管理":
             self.content_pages.setCurrentWidget(self.approval_view)
-        elif title == "预算管理":
-            self.content_pages.setCurrentWidget(self.budget_view)
+        
         
         # 更新当前页面标题
         self.current_page_title.setText(title)
@@ -385,25 +390,25 @@ class MainWindow(QMainWindow):
 
     def switch_to_dashboard_view(self):
         """切换到仪表板视图"""
-        nav_button = self.findChild(QPushButton, "nav_btn_0")
+        nav_button = self.findChild(QPushButton, "nav_仪表板")
         if nav_button:
             self.change_page(0, nav_button, "仪表板")
 
     def switch_to_business_view(self):
         """切换到业务管理视图"""
-        nav_button = self.findChild(QPushButton, "nav_btn_1")
+        nav_button = self.findChild(QPushButton, "nav_业务管理")
         if nav_button:
             self.change_page(1, nav_button, "业务管理")
 
     def switch_to_finance_view(self):
         """切换到财务管理视图"""
-        nav_button = self.findChild(QPushButton, "nav_btn_2")
+        nav_button = self.findChild(QPushButton, "nav_财务管理")
         if nav_button:
             self.change_page(2, nav_button, "财务管理")
 
     def switch_to_approval_view(self, approval_id=None):
         """切换到审批管理视图"""
-        nav_button = self.findChild(QPushButton, "nav_btn_3")
+        nav_button = self.findChild(QPushButton, "nav_审批管理")
         if nav_button:
             self.change_page(3, nav_button, "审批管理")
             
@@ -411,11 +416,7 @@ class MainWindow(QMainWindow):
         if approval_id and hasattr(self.approval_view, "highlight_approval"):
             self.approval_view.highlight_approval(approval_id)
 
-    def switch_to_budget_view(self):
-        """切换到预算管理视图"""
-        nav_button = self.findChild(QPushButton, "nav_btn_4")
-        if nav_button:
-            self.change_page(4, nav_button, "预算管理")
+    
 
     def show_help(self):
         """显示帮助信息"""
@@ -468,20 +469,7 @@ class MainWindow(QMainWindow):
             <h4>审批流程：</h4>
             <p>业务事件提交审批后，会根据审批配置分配给相应的审批人。审批通过后，业务事件状态变为"已审批"，可以创建财务记录。</p>
             """
-        elif isinstance(current_widget, BudgetView):
-            help_title = "预算管理帮助"
-            help_content = """
-            <h3>预算管理模块使用指南</h3>
-            <p>预算管理模块用于管理和监控各部门的预算使用情况。</p>
-            <h4>主要功能：</h4>
-            <ul>
-                <li><b>预算编制</b>：设置各部门的预算金额。</li>
-                <li><b>预算执行</b>：查看各部门的预算使用情况。</li>
-                <li><b>预算分析</b>：分析预算执行情况，生成报表。</li>
-            </ul>
-            <h4>注意事项：</h4>
-            <p>预算管理需要与财务记录关联，确保预算使用情况的准确性。</p>
-            """
+        
         
         # 创建帮助对话框
         msg_box = QMessageBox(self)
@@ -614,13 +602,17 @@ class MainWindow(QMainWindow):
         self.approval_view = ApprovalView(self.token, self.user_data)
         self.content_pages.addWidget(self.approval_view)
         
-        # 预算管理页面
-        self.budget_view = BudgetView(self.token, self.user_data)
-        self.content_pages.addWidget(self.budget_view)
+       
         
-        # 默认显示仪表板
-        self.content_pages.setCurrentIndex(0)
-        self.current_page_title.setText("仪表板")
+        # 默认显示页面
+        if self.user_data['username'] == 'admin':
+            # admin用户默认显示仪表板
+            self.content_pages.setCurrentIndex(0)
+            self.current_page_title.setText("仪表板")
+        else:
+            # 非admin用户默认显示业务管理
+            self.content_pages.setCurrentIndex(1)
+            self.current_page_title.setText("业务管理")
 
     def apply_dark_theme(self):
         """应用深色主题到应用程序"""

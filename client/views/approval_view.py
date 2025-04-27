@@ -102,10 +102,20 @@ class ApprovalView(QWidget):
         try:
             print(f"当前用户: {self.user_data}")
             
-            # 构建URL
+            # 构建URL，添加用户ID参数确保只加载当前用户能处理的审批任务
             url = "http://localhost:8000/approvals"
+            params = []
+            
+            # 添加状态筛选
             if status:
-                url += f"?status={status}"
+                params.append(f"status={status}")
+                
+            # 添加当前用户ID，用于服务端筛选该用户可处理的审批任务
+            params.append(f"user_id={self.user_data['id']}")
+            
+            # 拼接URL参数
+            if params:
+                url += "?" + "&".join(params)
             
             response = requests.get(
                 url,
@@ -478,12 +488,12 @@ class ApprovalView(QWidget):
     
     def refresh_data(self):
         """刷新数据"""
-        # 先加载所有待审批记录
+        # 先加载当前用户可处理的待审批记录
         self.load_data("待审批")
         if len(self.data) > 0:
             QMessageBox.information(self, "刷新成功", f"找到 {len(self.data)} 条待审批记录")
         else:
-            # 如果没有待审批记录，加载所有记录
+            # 如果没有待审批记录，加载当前用户可处理的所有记录
             self.load_data()
             QMessageBox.information(self, "刷新成功", "审批数据已刷新")
 

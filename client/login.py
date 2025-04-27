@@ -104,8 +104,9 @@ class LoginWindow(QWidget):
         # 默认用户提示
         default_users_info = QLabel("系统默认用户:  \n"
                                  "- 用户名: admin, 密码: admin (管理员权限)  \n"
-                                 "- 用户名: finance, 密码: finance (财务权限)  \n"
-                                 "- 用户名: business, 密码: business (业务权限)")
+                                 "- 用户名: zhangsan, 密码: password123 (财务权限)  \n"
+                                 "- 用户名: lisi, 密码: password123 (业务权限)  \n"
+                                 "- 用户名: wangwu, 密码: password123 (普通权限)")
         default_users_info.setObjectName("default_users_info")
         form_layout.addWidget(default_users_info)
         
